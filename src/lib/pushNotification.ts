@@ -91,7 +91,9 @@ export async function subscribePush(): Promise<{ ok: boolean; reason?: string }>
   try {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true, // bắt buộc — mỗi push phải show notification
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      // Cast BufferSource: TS 5.7+ thắt Uint8Array<ArrayBufferLike> không match
+      // applicationServerKey signature trực tiếp.
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
     });
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "Subscribe thất bại" };
