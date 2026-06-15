@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notify Test</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; max-width: 480px; margin: 0 auto; background: #f8fafc; }
+    h1 { font-size: 20px; }
+    button { display: block; width: 100%; padding: 14px; font-size: 16px; font-weight: 600; border: 0; border-radius: 12px; margin: 10px 0; cursor: pointer; }
+    .primary { background: #7c3aed; color: white; }
+    .secondary { background: #e2e8f0; color: #1e293b; }
+    .log { background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-top: 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; min-height: 100px; }
+    .ok { color: #16a34a; font-weight: 600; }
+    .err { color: #dc2626; font-weight: 600; }
+    .info { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <h1>Test Notification trên thiết bị</h1>
+  <p>Test xem Chrome trên phone có hiện được notification ở thanh trạng thái không.</p>
+
+  <button class="primary" id="grant">1. Xin quyền Notification</button>
+  <button class="primary" id="fire">2. Bắn notification ngay (không cần SW)</button>
+  <button class="secondary" id="status">Kiểm tra trạng thái</button>
+
+  <div class="log" id="log">Logs sẽ hiện ở đây...</div>
+
+  <script>
+    const log = document.getElementById('log');
+    function add(msg, type) {
+      const t = new Date().toLocaleTimeString();
+      const cls = type ? ` class="${type}"` : '';
+      log.innerHTML = `<span${cls}>[${t}] ${msg}</span>\n` + log.innerHTML;
+    }
+
+    add('User-Agent: ' + navigator.userAgent, 'info');
+    add('Notification có trong window: ' + ('Notification' in window), 'info');
+    add('ServiceWorker có: ' + ('serviceWorker' in navigator), 'info');
+    if ('Notification' in window) {
+      add('Permission hiện tại: ' + Notification.permission, 'info');
+    }
+
+    document.getElementById('grant').onclick = async () => {
+      if (!('Notification' in window)) {
+        add('Trình duyệt không hỗ trợ Notification API', 'err');
+        return;
+      }
+      try {
+        const p = await Notification.requestPermission();
+        add('Permission sau khi xin: ' + p, p === 'granted' ? 'ok' : 'err');
+      } catch (e) {
+        add('Lỗi xin permission: ' + e.message, 'err');
+      }
+    };
+
+    document.getElementById('fire').onclick = async () => {
+      if (Notification.permission !== 'granted') {
+        add('Permission chưa granted — bấm nút 1 trước', 'err');
+        return;
+      }
+      if (!('serviceWorker' in navigator)) {
+        add('Trình duyệt không có ServiceWorker', 'err');
+        return;
+      }
+      try {
+        // Android Chrome KHÔNG cho `new Notification()` — bắt buộc qua SW.
+        // Register 1 SW tạm nếu chưa có (vd visit Chrome browser thường, không qua PWA).
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) {
+          add('Chưa có SW — register tạm /notify-test-sw.js...', 'info');
+          reg = await navigator.serviceWorker.register('/notify-test-sw.js');
+          add('Đã register, chờ ready...', 'info');
+          await navigator.serviceWorker.ready;
+        }
+        await reg.showNotification('Test từ Telesales', {
+          body: 'Lúc ' + new Date().toLocaleTimeString(),
+          icon: '/pwa-192x192.png',
+          tag: 'test-direct',
+          requireInteraction: false,
+        });
+        add('✓ showNotification() đã gọi xong — check status bar', 'ok');
+      } catch (e) {
+        add('✗ Lỗi: ' + e.message, 'err');
+      }
+    };
+
+    document.getElementById('status').onclick = () => {
+      add('---', 'info');
+      add('Notification.permission = ' + Notification.permission, 'info');
+      add('document.visibilityState = ' + document.visibilityState, 'info');
+      add('navigator.onLine = ' + navigator.onLine, 'info');
+    };
+  </script>
+</body>
+</html>
