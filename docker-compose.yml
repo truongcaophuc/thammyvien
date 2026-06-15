@@ -1,0 +1,18 @@
+services:
+  telesales-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telesales-app
+    # Port 10100 chọn vì range 10080-10097 đã bị typebot dùng.
+    ports:
+      - "10100:80"
+    # Attach vào network của cep-netcore để gọi container qua tên (cep-netcore:5077).
+    networks:
+      - cep_network
+    restart: unless-stopped
+
+networks:
+  cep_network:
+    name: cep_tinycrm-network
+    external: true
