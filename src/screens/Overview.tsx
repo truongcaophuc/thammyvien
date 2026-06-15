@@ -16,7 +16,8 @@ import {
   formatAppointment,
   type Overview as OverviewData,
 } from "../lib/overview";
-import NotificationSheet, { getUnreadCount } from "../modals/NotificationSheet";
+import NotificationSheet from "../modals/NotificationSheet";
+import { countUnread, fetchMyNotifications } from "../lib/notifications";
 
 function StatCard({
   icon,
@@ -61,7 +62,10 @@ export default function Overview({
   const [data, setData] = useState<OverviewData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
-  const unread = getUnreadCount();
+  // Unread = số notif có sentAt > lastViewedAt (localStorage). Re-fetch khi đóng sheet
+  // (sau khi đọc xong → mark viewed → count về 0). notifBust = trigger refetch.
+  const [unread, setUnread] = useState(0);
+  const [notifBust, setNotifBust] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +83,21 @@ export default function Overview({
       cancelled = true;
     };
   }, []);
+
+  // Fetch notification count độc lập với overview — refetch khi notifBust thay đổi.
+  // Silent fail nếu BE chưa sẵn sàng — không break UI.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const notifs = await fetchMyNotifications();
+        if (!cancelled) setUnread(countUnread(notifs));
+      } catch {
+        if (!cancelled) setUnread(0);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [notifBust]);
 
   if (err) {
     return (
@@ -241,7 +260,15 @@ export default function Overview({
         </div>
       </div>
 
-      {notifOpen && <NotificationSheet onClose={() => setNotifOpen(false)} />}
+      {notifOpen && (
+        <NotificationSheet
+          onClose={() => {
+            setNotifOpen(false);
+            // Sheet vừa mark viewed → bump bust để re-count unread (về 0)
+            setNotifBust((b) => b + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

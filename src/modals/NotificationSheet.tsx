@@ -1,106 +1,104 @@
-import { Bell, BellRing, Calendar, UserPlus, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Calendar, UserPlus, CheckCircle2, Loader2 } from "lucide-react";
 import Sheet from "../components/Sheet";
+import {
+  fetchMyNotifications,
+  formatRelativeTime,
+  getLastViewedAt,
+  markNotificationsViewed,
+  type NotificationType,
+  type ServerNotification,
+} from "../lib/notifications";
 
-// MOCK notification list — sẽ wire qua BE WebPushNotificationLog table sau:
-//   SELECT Type, ReferenceId, SentAt FROM dbo."WebPushNotificationLog"
-//   WHERE UserId = @uid ORDER BY SentAt DESC LIMIT 50;
-type NotifType = "lead" | "appointment" | "info";
+const iconOf: Record<string, React.ReactNode> = {
+  lead_assigned: <UserPlus size={18} className="text-brand-600" />,
+  appointment_reminder: <Calendar size={18} className="text-emerald-600" />,
+  test: <CheckCircle2 size={18} className="text-sky-600" />,
+};
 
-interface Notif {
-  id: string;
-  type: NotifType;
-  title: string;
-  body: string;
-  time: string; // relative display
-  read: boolean;
+const bgOf: Record<string, string> = {
+  lead_assigned: "bg-brand-100",
+  appointment_reminder: "bg-emerald-100",
+  test: "bg-sky-100",
+};
+
+function iconFor(type: NotificationType) {
+  return iconOf[type] ?? <Bell size={18} className="text-slate-500" />;
 }
 
-const mockNotifs: Notif[] = [
-  {
-    id: "n1",
-    type: "lead",
-    title: "Lead mới được phân bổ",
-    body: "Nguyễn Thị Hồng Nhung — Telesales H1 2026",
-    time: "2 phút trước",
-    read: false,
-  },
-  {
-    id: "n2",
-    type: "appointment",
-    title: "Lịch hẹn sắp tới",
-    body: "Lúc 14:30 hôm nay — 5 Lý Tự Trọng P. Bến Nghé",
-    time: "15 phút trước",
-    read: false,
-  },
-  {
-    id: "n3",
-    type: "lead",
-    title: "Lead mới được phân bổ",
-    body: "Phùng Quốc Hưng — Page Hồng Ngọc",
-    time: "1 giờ trước",
-    read: true,
-  },
-  {
-    id: "n4",
-    type: "info",
-    title: "Bạn vừa đạt mục tiêu hôm qua",
-    body: "10 cuộc gọi + 2 lịch hẹn — vượt KPI 110%",
-    time: "Hôm qua · 18:00",
-    read: true,
-  },
-];
-
-const iconOf: Record<NotifType, React.ReactNode> = {
-  lead: <UserPlus size={18} className="text-brand-600" />,
-  appointment: <Calendar size={18} className="text-emerald-600" />,
-  info: <CheckCircle2 size={18} className="text-sky-600" />,
-};
-
-const bgOf: Record<NotifType, string> = {
-  lead: "bg-brand-100",
-  appointment: "bg-emerald-100",
-  info: "bg-sky-100",
-};
+function bgFor(type: NotificationType) {
+  return bgOf[type] ?? "bg-slate-100";
+}
 
 export default function NotificationSheet({ onClose }: { onClose: () => void }) {
+  const [notifs, setNotifs] = useState<ServerNotification[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [lastViewed] = useState<Date | null>(() => getLastViewedAt());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setErr(null);
+        const data = await fetchMyNotifications();
+        if (cancelled) return;
+        setNotifs(data);
+        // Mark viewed sau khi load xong → unread badge ở Overview sẽ reset lần render sau
+        markNotificationsViewed();
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : "Không tải được thông báo");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <Sheet title="Thông báo" onClose={onClose}>
       <div className="space-y-2 px-4">
-        {mockNotifs.length === 0 && (
+        {notifs === null && !err && (
+          <div className="flex items-center justify-center py-10 text-slate-400">
+            <Loader2 size={24} className="animate-spin" />
+          </div>
+        )}
+
+        {err && (
+          <div className="rounded-2xl bg-rose-50 p-4 text-center text-[13px] text-rose-600 shadow-card">
+            {err}
+          </div>
+        )}
+
+        {notifs && notifs.length === 0 && (
           <div className="rounded-2xl bg-white p-8 text-center text-[13px] text-slate-400 shadow-card">
             <Bell size={28} className="mx-auto mb-2 text-slate-300" />
             Chưa có thông báo nào
           </div>
         )}
-        {mockNotifs.map((n) => (
-          <button
-            key={n.id}
-            className={`flex w-full cursor-pointer items-start gap-3 rounded-2xl p-3.5 text-left shadow-card transition-colors ${
-              n.read ? "bg-white" : "bg-brand-50/60"
-            }`}
-          >
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bgOf[n.type]}`}>
-              {iconOf[n.type]}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-[14px] font-bold text-slate-800">{n.title}</span>
-                {!n.read && <span className="h-2 w-2 shrink-0 rounded-full bg-brand-600" />}
+
+        {notifs?.map((n) => {
+          // Unread = sentAt > lastViewed (lưu trước khi markNotificationsViewed chạy)
+          const isUnread = !lastViewed || new Date(n.sentAt) > lastViewed;
+          return (
+            <button
+              key={n.id}
+              className={`flex w-full cursor-pointer items-start gap-3 rounded-2xl p-3.5 text-left shadow-card transition-colors ${
+                isUnread ? "bg-brand-50/60" : "bg-white"
+              }`}
+            >
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bgFor(n.type)}`}>
+                {iconFor(n.type)}
               </div>
-              <div className="mt-0.5 truncate text-[12.5px] text-slate-600">{n.body}</div>
-              <div className="mt-1 text-[11.5px] text-slate-400">{n.time}</div>
-            </div>
-          </button>
-        ))}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[14px] font-bold text-slate-800">{n.title}</span>
+                  {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-brand-600" />}
+                </div>
+                <div className="mt-0.5 truncate text-[12.5px] text-slate-600">{n.body}</div>
+                <div className="mt-1 text-[11.5px] text-slate-400">{formatRelativeTime(n.sentAt)}</div>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </Sheet>
   );
 }
-
-// Helper export — đếm unread cho badge ở bell icon
-export function getUnreadCount(): number {
-  return mockNotifs.filter((n) => !n.read).length;
-}
-
-// Re-export icon cho header dùng
-export { BellRing };
