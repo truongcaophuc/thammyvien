@@ -7,6 +7,7 @@ import {
   Routes,
   useLocation,
   useNavigate,
+  useParams,
 } from "react-router-dom";
 import BottomNav from "./components/BottomNav";
 import Overview from "./screens/Overview";
@@ -17,6 +18,7 @@ import Login from "./screens/Login";
 import CallScriptSheet from "./modals/CallScriptSheet";
 import type { Lead } from "./data";
 import { checkSession, type AgentProfile } from "./lib/auth";
+import { fetchLeadById } from "./lib/leads";
 
 type AuthState = "checking" | "guest" | "authed";
 
@@ -200,13 +202,33 @@ function ListRoute() {
 function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const lead = (location.state as { lead?: Lead } | null)?.lead;
+  const { id } = useParams();
+  const stateLead = (location.state as { lead?: Lead } | null)?.lead;
   const [scriptOpen, setScriptOpen] = useState(false);
 
-  // Nếu truy cập trực tiếp URL (refresh) → state mất → quay về list.
-  // Nâng cấp: fetch contact(id) từ entity-centric resolver để hỗ trợ deep-link.
-  if (!lead) {
-    return <Navigate to="/list" replace />;
+  // Deep-link (noti/push → /lead/:id, không có state) → fetch lead theo id.
+  const [lead, setLead] = useState<Lead | null>(stateLead ?? null);
+  const [loading, setLoading] = useState(!stateLead);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (stateLead || !id) return;
+    let cancelled = false;
+    setLoading(true);
+    fetchLeadById(id)
+      .then((l) => { if (!cancelled) (l ? setLead(l) : setNotFound(true)); })
+      .catch(() => { if (!cancelled) setNotFound(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, stateLead]);
+
+  if (notFound) return <Navigate to="/list" replace />;
+  if (loading || !lead) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-300/60 text-slate-400">
+        <Loader2 size={28} className="animate-spin" />
+      </div>
+    );
   }
 
   return (

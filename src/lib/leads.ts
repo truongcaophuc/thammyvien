@@ -69,6 +69,12 @@ export async function fetchMyLeads(): Promise<Lead[]> {
   });
 }
 
+// Hỗ trợ deep-link (noti/push → /lead/:id): tìm 1 lead theo id trong bucket của agent.
+export async function fetchLeadById(id: string): Promise<Lead | null> {
+  const leads = await fetchMyLeads();
+  return leads.find((l) => l.id === id) ?? null;
+}
+
 // Map raw ContactCall → display history. Tone visual theo result code:
 // Cx (Contacted) family = neutral/success, Fx (Failed) = warning.
 function mapCallHistory(h: ServerCallHistory): CallHistory {

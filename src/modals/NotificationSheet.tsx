@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell, Calendar, UserPlus, CheckCircle2, Loader2 } from "lucide-react";
 import Sheet from "../components/Sheet";
 import {
@@ -31,6 +32,7 @@ function bgFor(type: NotificationType) {
 }
 
 export default function NotificationSheet({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
   const [notifs, setNotifs] = useState<ServerNotification[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [lastViewed] = useState<Date | null>(() => getLastViewedAt());
@@ -80,6 +82,12 @@ export default function NotificationSheet({ onClose }: { onClose: () => void }) 
           return (
             <button
               key={n.id}
+              onClick={() => {
+                if (n.referenceId) {
+                  onClose();
+                  navigate(`/lead/${n.referenceId}`);
+                }
+              }}
               className={`flex w-full cursor-pointer items-start gap-3 rounded-2xl p-3.5 text-left shadow-card transition-colors ${
                 isUnread ? "bg-brand-50/60" : "bg-white"
               }`}
