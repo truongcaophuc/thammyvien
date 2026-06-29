@@ -28,7 +28,7 @@ function StatCard({
   sub,
 }: {
   icon: React.ReactNode;
-  value: number;
+  value: number | string;
   label: string;
   ring: string;
   iconBg: string;
@@ -164,15 +164,15 @@ export default function Overview({
         <StatCard
           icon={<CheckCircle2 size={20} className="text-emerald-600" />}
           iconBg="bg-emerald-100"
-          value={data.calledTodayCount}
-          label="Đã gọi hôm nay"
+          value={`${data.conversionRate}%`}
+          label="Tỷ lệ chốt"
           ring="text-emerald-600"
         />
         <StatCard
           icon={<CalendarCheck size={20} className="text-sky-600" />}
           iconBg="bg-sky-100"
           value={data.appointmentCount}
-          label="Lịch hẹn thành công"
+          label="Lịch hẹn sắp tới"
           ring="text-sky-700"
         />
         <StatCard
@@ -187,7 +187,7 @@ export default function Overview({
       {/* Tiến độ + nút bắt đầu gọi */}
       <div className="rounded-2xl2 bg-white p-4 shadow-card">
         <div className="mb-2 flex items-center justify-between text-[13px]">
-          <span className="font-semibold text-slate-700">Tiến độ hôm nay</span>
+          <span className="font-semibold text-slate-700">Đã xử lý hôm nay</span>
           <span className="font-bold text-brand-600">
             {data.progressDone}/{data.progressTotal}
           </span>

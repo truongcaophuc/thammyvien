@@ -15,6 +15,8 @@ export interface Overview {
   today: string; // ISO 8601
   toCallCount: number;
   calledTodayCount: number;
+  bookedTodayCount: number;
+  conversionRate: number;
   // Đổi từ callbackCount → overdueCount. "Quá hạn" = lead status=overdue.
   // Actionable hơn callback (Cần gọi đã bao gồm callback hôm nay).
   // TODO BE: rename field `callbackCount` → `overdueCount` trong resolver MyOverview.
@@ -34,6 +36,8 @@ const OVERVIEW_QUERY = `
       today
       toCallCount
       calledTodayCount
+      bookedTodayCount
+      conversionRate
       overdueCount
       appointmentCount
       totalAssignedCount

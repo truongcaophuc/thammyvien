@@ -40,7 +40,7 @@ function localTodayIso(): string {
 // TODO: migrate sang BE — resultOptions từ CallResult table; bookingDays/timeSlots/branchName
 // từ chi nhánh + slot availability của user. Hiện hardcode để demo flow.
 const resultOptions: { key: ResultKey; label: string }[] = [
-  { key: "WRONG_NUMBER", label: "Sai số" },
+  { key: "WRONG_NUMBER", label: "Không liên hệ được" },   // gộp: sai số / không nghe máy
   { key: "REJECTED", label: "Không quan tâm / từ chối" },
   { key: "CALLBACK", label: "Gọi lại sau" },
   { key: "BOOKED", label: "Đặt lịch hẹn thành công" },
