@@ -20,6 +20,7 @@ export interface Overview {
   // TODO BE: rename field `callbackCount` → `overdueCount` trong resolver MyOverview.
   overdueCount: number;
   appointmentCount: number;
+  totalAssignedCount: number;
   progressDone: number;
   progressTotal: number;
   upcomingAppointments: OverviewAppointment[];
@@ -35,6 +36,7 @@ const OVERVIEW_QUERY = `
       calledTodayCount
       overdueCount
       appointmentCount
+      totalAssignedCount
       progressDone
       progressTotal
       upcomingAppointments {

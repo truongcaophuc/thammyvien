@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ChevronLeft,
   Phone,
@@ -16,9 +16,26 @@ import {
   Pencil,
   Loader2,
 } from "lucide-react";
-import type { DayOption, Lead, ResultKey, Slot } from "../data";
+import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
+import { getArrivalAvailability, type ArrivalSlot } from "../lib/calendar";
+
+// HH:mm từ ISO datetime
+function formatHm(iso: string): string {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+// "YYYY-MM-DD" → "DD/MM"
+function ddmm(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${d}/${m}`;
+}
+// hôm nay theo local "YYYY-MM-DD"
+function localTodayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // TODO: migrate sang BE — resultOptions từ CallResult table; bookingDays/timeSlots/branchName
 // từ chi nhánh + slot availability của user. Hiện hardcode để demo flow.
@@ -41,23 +58,13 @@ function buildBookingDays(): DayOption[] {
     const dd = String(d.getDate()).padStart(2, "0");
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const label = i === 0 ? "Hôm nay" : i === 1 ? "Mai" : WEEKDAYS_SHORT_VI[d.getDay()];
-    out.push({ key: `d${i}`, label, date: `${dd}/${mm}` });
+    out.push({ key: `d${i}`, label, date: `${dd}/${mm}`, iso: `${d.getFullYear()}-${mm}-${dd}` });
   }
   return out;
 }
 const bookingDays: DayOption[] = buildBookingDays();
 
-const timeSlots: Slot[] = [
-  { time: "09:00", booked: 0 },
-  { time: "10:00", booked: 1 },
-  { time: "11:00", booked: 0 },
-  { time: "14:00", booked: 1 },
-  { time: "15:00", booked: 2 },
-  { time: "16:00", booked: 1 },
-  { time: "17:00", booked: 0 },
-];
-
-const branchName = "CS Quận Bình Thạnh";
+const branchName = "Mỹ Nhân Q1";
 
 function InfoRow({
   icon,
@@ -101,21 +108,34 @@ export default function LeadDetail({
   const isFinalState = lead.status === "closed" || lead.status === "scheduled";
 
   const [result, setResult] = useState<ResultKey | null>(null);
-  const [day, setDay] = useState(bookingDays[1].key);
-  const [slot, setSlot] = useState<string | null>("10:00");
+  const [selectedIso, setSelectedIso] = useState(bookingDays[1].iso); // YYYY-MM-DD — chọn tự do
+  const [slot, setSlot] = useState<string | null>(null); // ISO startAt của khung giờ đã chọn
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [slots, setSlots] = useState<ArrivalSlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [showDiscard, setShowDiscard] = useState(false); // popup xác nhận rời trang
 
   const showBooking = result === "BOOKED";
-  const selectedDay = bookingDays.find((d) => d.key === day)!;
+  const selDDMM = ddmm(selectedIso);
 
-  // P2 — discard confirmation: cảnh báo khi user back với data đang nhập.
+  // Tải khung giờ thật từ CEP Calendar khi chọn BOOKED hoặc đổi ngày.
+  useEffect(() => {
+    if (!showBooking) return;
+    let cancelled = false;
+    setLoadingSlots(true);
+    setSlot(null);
+    getArrivalAvailability(selectedIso)
+      .then((s) => { if (!cancelled) setSlots(s); })
+      .catch(() => { if (!cancelled) setSlots([]); })
+      .finally(() => { if (!cancelled) setLoadingSlots(false); });
+    return () => { cancelled = true; };
+  }, [showBooking, selectedIso]);
+
+  // P2 — discard confirmation: popup khi user back với data đang nhập (thay window.confirm).
+  const hasUnsavedData = !!result || notes.trim().length > 0;
   const handleBack = () => {
-    const hasUnsavedData = !!result || notes.trim().length > 0;
-    if (hasUnsavedData) {
-      const ok = window.confirm("Bạn đang nhập dở kết quả cuộc gọi. Bỏ và quay lại?");
-      if (!ok) return;
-    }
+    if (hasUnsavedData) { setShowDiscard(true); return; }
     onBack();
   };
 
@@ -139,14 +159,10 @@ export default function LeadDetail({
         ? lead.status === "closed" ? "REJECTED" : "BOOKED"
         : result!;
 
-      // Parse appointment date từ day+slot khi BOOKED. Final-scheduled bỏ qua (chỉ ghi note).
+      // appointmentDate = ISO startAt của khung giờ thật đã chọn (từ availability).
       let appointmentDate: string | undefined;
       if (!isFinalState && showBooking && slot) {
-        const [dd, mm] = selectedDay.date.split("/").map(Number);
-        const [hh, mi] = slot.split(":").map(Number);
-        const now = new Date();
-        const dt = new Date(now.getFullYear(), mm - 1, dd, hh, mi, 0, 0);
-        appointmentDate = dt.toISOString();
+        appointmentDate = slot;
       }
 
       const res = await saveCallResult({
@@ -161,7 +177,7 @@ export default function LeadDetail({
       if (isFinalState) {
         onSaved(`Đã cập nhật ghi chú cho ${lead.name}`);
       } else if (showBooking) {
-        onSaved(`Đã đặt lịch ${lead.name} · ${selectedDay.date} ${slot} tại ${branchName}${noteSuffix}`);
+        onSaved(`Đã đặt lịch ${lead.name} · ${selDDMM} ${slot ? formatHm(slot) : ""} tại ${branchName}${noteSuffix}`);
       } else {
         const label = resultOptions.find((r) => r.key === result)!.label;
         onSaved(`Đã lưu kết quả: ${label}${noteSuffix}`);
@@ -338,11 +354,11 @@ export default function LeadDetail({
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {bookingDays.map((d) => {
-                    const on = day === d.key;
+                    const on = selectedIso === d.iso;
                     return (
                       <button
                         key={d.key}
-                        onClick={() => setDay(d.key)}
+                        onClick={() => setSelectedIso(d.iso)}
                         className={`cursor-pointer rounded-xl border-2 py-2 text-center transition-colors ${
                           on
                             ? "border-brand-500 bg-brand-50"
@@ -367,14 +383,25 @@ export default function LeadDetail({
                     );
                   })}
                 </div>
+                {/* Chọn ngày tự do */}
+                <div className="mt-2.5 flex items-center gap-2">
+                  <span className="text-[12.5px] text-slate-500">Hoặc ngày khác:</span>
+                  <input
+                    type="date"
+                    value={selectedIso}
+                    min={localTodayIso()}
+                    onChange={(e) => e.target.value && setSelectedIso(e.target.value)}
+                    className="flex-1 rounded-xl border-2 border-slate-100 px-3 py-1.5 text-[14px] text-slate-700 outline-none transition-colors focus:border-brand-300"
+                  />
+                </div>
               </div>
 
               {/* Thông tin cơ sở */}
               <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">
                 <MapPin size={15} className="mt-0.5 shrink-0 text-rose-500" />
                 <span>
-                  <b className="text-slate-700">{branchName}</b> — ngày {selectedDay.date} đã có{" "}
-                  <b className="text-slate-700">5</b> cuộc hẹn
+                  <b className="text-slate-700">{branchName}</b> — ngày {selDDMM} đã có{" "}
+                  <b className="text-slate-700">{slots.reduce((a, s) => a + s.booked, 0)}</b> cuộc hẹn
                 </span>
               </div>
 
@@ -383,38 +410,56 @@ export default function LeadDetail({
                 <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
                   <Clock3 size={13} /> Chọn giờ hẹn
                 </div>
+                {loadingSlots ? (
+                  <div className="flex items-center gap-2 py-4 text-[13px] text-slate-400">
+                    <Loader2 size={15} className="animate-spin" /> Đang tải khung giờ...
+                  </div>
+                ) : slots.length === 0 ? (
+                  <div className="py-4 text-[13px] text-slate-400">
+                    Không có khung giờ (chi nhánh chưa cấu hình giờ làm / ngày nghỉ).
+                  </div>
+                ) : (
                 <div className="grid grid-cols-3 gap-2">
-                  {timeSlots.map((s) => {
-                    const on = slot === s.time;
-                    const free = s.booked === 0;
+                  {slots.map((s) => {
+                    const on = slot === s.startAt;
+                    const disabled = s.isPast || s.available <= 0;
+                    const t = formatHm(s.startAt);
                     return (
                       <button
-                        key={s.time}
-                        onClick={() => setSlot(s.time)}
-                        className={`cursor-pointer rounded-xl border-2 py-2 text-center transition-colors ${
-                          on
-                            ? "border-brand-500 bg-brand-600 text-white shadow-soft"
-                            : "border-slate-100 bg-white hover:border-slate-200"
+                        key={s.startAt}
+                        disabled={disabled}
+                        onClick={() => setSlot(s.startAt)}
+                        className={`rounded-xl border-2 py-2 text-center transition-colors ${
+                          disabled
+                            ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-50"
+                            : on
+                            ? "cursor-pointer border-brand-500 bg-brand-600 text-white shadow-soft"
+                            : "cursor-pointer border-slate-100 bg-white hover:border-slate-200"
                         }`}
                       >
                         <div className={`text-[14px] font-extrabold ${on ? "text-white" : "text-slate-800"}`}>
-                          {s.time}
+                          {t}
                         </div>
                         <div
                           className={`text-[10.5px] font-semibold ${
                             on
                               ? "text-white/85"
-                              : free
-                              ? "text-emerald-600"
-                              : "text-amber-600"
+                              : s.isPast
+                              ? "text-slate-400"
+                              : s.available <= 0
+                              ? "text-rose-500"
+                              : s.available === 1
+                              ? "text-amber-600"
+                              : "text-emerald-600"
                           }`}
                         >
-                          {free ? "Trống" : `${s.booked} khách`}
+                          {s.isPast ? "Đã qua" : s.available <= 0 ? "Đầy" : `Còn ${s.available}/${s.capacity}`}
                         </div>
                       </button>
                     );
                   })}
                 </div>
+                )}
                 <div className="mt-3 flex items-center gap-4 text-[11.5px] text-slate-500">
                   <span className="flex items-center gap-1">
                     <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Trống
@@ -476,6 +521,38 @@ export default function LeadDetail({
           )}
         </button>
       </div>
+
+      {/* Popup xác nhận rời trang khi đang nhập dở (thay window.confirm) */}
+      {showDiscard && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+          onClick={() => setShowDiscard(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-[16px] font-bold text-slate-900">Bỏ thay đổi?</div>
+            <div className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+              Bạn đang nhập dở kết quả cuộc gọi. Rời trang sẽ mất nội dung này.
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setShowDiscard(false)}
+                className="flex-1 cursor-pointer rounded-xl border-2 border-slate-200 py-2.5 text-[14px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Ở lại
+              </button>
+              <button
+                onClick={() => { setShowDiscard(false); onBack(); }}
+                className="flex-1 cursor-pointer rounded-xl bg-rose-500 py-2.5 text-[14px] font-bold text-white shadow-soft active:scale-[0.98]"
+              >
+                Bỏ và quay lại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

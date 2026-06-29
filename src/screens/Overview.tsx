@@ -3,7 +3,7 @@ import {
   PhoneOutgoing,
   PhoneCall,
   CheckCircle2,
-  AlertCircle,
+  Users,
   CalendarCheck,
   CalendarClock,
   ChevronRight,
@@ -25,12 +25,14 @@ function StatCard({
   label,
   ring,
   iconBg,
+  sub,
 }: {
   icon: React.ReactNode;
   value: number;
   label: string;
   ring: string;
   iconBg: string;
+  sub?: React.ReactNode; // badge phụ (vd "2 quá hạn") màu đỏ
 }) {
   return (
     // text-center + mx-auto cho icon → icon/number/label cùng trục giữa.
@@ -44,6 +46,14 @@ function StatCard({
         {value}
       </div>
       <div className="mt-1 text-[13px] font-medium text-slate-500">{label}</div>
+      {sub && (
+        <div className="mt-2 flex justify-center">
+          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 ring-1 ring-rose-100">
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            {sub}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -149,6 +159,7 @@ export default function Overview({
           value={data.toCallCount}
           label="Cần gọi hôm nay"
           ring="text-brand-700"
+          sub={data.overdueCount > 0 ? `${data.overdueCount} quá hạn` : undefined}
         />
         <StatCard
           icon={<CheckCircle2 size={20} className="text-emerald-600" />}
@@ -158,18 +169,18 @@ export default function Overview({
           ring="text-emerald-600"
         />
         <StatCard
-          icon={<AlertCircle size={20} className="text-rose-600" />}
-          iconBg="bg-rose-100"
-          value={data.overdueCount}
-          label="Quá hạn"
-          ring="text-rose-600"
-        />
-        <StatCard
           icon={<CalendarCheck size={20} className="text-sky-600" />}
           iconBg="bg-sky-100"
           value={data.appointmentCount}
           label="Lịch hẹn thành công"
           ring="text-sky-700"
+        />
+        <StatCard
+          icon={<Users size={20} className="text-slate-600" />}
+          iconBg="bg-slate-100"
+          value={data.totalAssignedCount}
+          label="Tổng phụ trách"
+          ring="text-slate-700"
         />
       </div>
 

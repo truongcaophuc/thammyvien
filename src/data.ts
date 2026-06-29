@@ -51,6 +51,7 @@ export interface DayOption {
   key: string;
   label: string;
   date: string;
+  iso: string; // YYYY-MM-DD để query availability
 }
 
 export interface Slot {

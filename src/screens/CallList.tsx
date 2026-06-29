@@ -8,7 +8,7 @@ import { fetchMyLeads } from "../lib/leads";
 export type FilterKey = "to_call" | "overdue" | "callback" | "scheduled" | "closed";
 
 const filters: { key: FilterKey; label: string; match: LeadStatus[] }[] = [
-  { key: "to_call", label: "Cần gọi", match: ["new"] },
+  { key: "to_call", label: "Mới", match: ["new"] },
   { key: "overdue", label: "Quá hạn", match: ["overdue"] },
   { key: "callback", label: "Gọi lại", match: ["callback"] },
   { key: "scheduled", label: "Đã đặt lịch", match: ["scheduled"] },
