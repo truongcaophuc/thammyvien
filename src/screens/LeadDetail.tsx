@@ -112,7 +112,8 @@ export default function LeadDetail({
   const [saving, setSaving] = useState(false);
   const [slots, setSlots] = useState<ArrivalSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [branch, setBranch] = useState<CalendarBranch | null>(null); // chi nhánh động từ CEP
+  const [branches, setBranches] = useState<CalendarBranch[]>([]); // danh sách chi nhánh từ CEP
+  const [branch, setBranch] = useState<CalendarBranch | null>(null); // chi nhánh đang chọn
   const [showDiscard, setShowDiscard] = useState(false); // popup xác nhận rời trang
 
   const showBooking = result === "BOOKED";
@@ -120,13 +121,13 @@ export default function LeadDetail({
 
   // Lấy chi nhánh động từ CEP (thay tên hardcode) khi mở phần đặt lịch.
   useEffect(() => {
-    if (!showBooking || branch) return;
+    if (!showBooking || branches.length) return;
     let cancelled = false;
     getCalendarBranches()
-      .then((bs) => { if (!cancelled && bs.length) setBranch(bs[0]); })
+      .then((bs) => { if (!cancelled) { setBranches(bs); if (bs.length) setBranch(bs[0]); } })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [showBooking, branch]);
+  }, [showBooking, branches.length]);
 
   // Tải khung giờ thật từ CEP Calendar khi chọn BOOKED hoặc đổi ngày / chi nhánh.
   useEffect(() => {
@@ -354,6 +355,24 @@ export default function LeadDetail({
             <div className="mt-4 space-y-4 rounded-2xl border border-emerald-100 bg-white p-4">
               <div className="flex items-center gap-2 text-[14.5px] font-bold text-slate-800">
                 <CalendarDays size={18} className="text-emerald-600" /> Đặt lịch hẹn tại cơ sở
+              </div>
+
+              {/* Chọn cơ sở */}
+              <div>
+                <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                  Chọn cơ sở
+                </div>
+                <select
+                  value={branch?.id ?? ""}
+                  onChange={(e) => setBranch(branches.find((b) => b.id === e.target.value) ?? null)}
+                  disabled={branches.length === 0}
+                  className="w-full cursor-pointer rounded-xl border-2 border-slate-100 bg-white px-3 py-2.5 text-[14px] font-semibold text-slate-700 focus:border-brand-500 focus:outline-none disabled:opacity-60"
+                >
+                  {branches.length === 0 && <option value="">Đang tải cơ sở…</option>}
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Chọn ngày */}
