@@ -10,8 +10,8 @@ export interface ArrivalSlot {
 }
 
 const ARRIVAL_AVAILABILITY_QUERY = `
-  query ArrivalAvailability($date: String!) {
-    calendarArrivalAvailability(date: $date) {
+  query ArrivalAvailability($date: String!, $branchId: UUID) {
+    calendarArrivalAvailability(date: $date, branchId: $branchId) {
       startAt
       booked
       capacity
@@ -21,11 +21,29 @@ const ARRIVAL_AVAILABILITY_QUERY = `
   }
 `;
 
-/** Lấy khung giờ còn trống của 1 ngày (mặc định chi nhánh + loại arrival-slot duy nhất). */
-export async function getArrivalAvailability(dateIso: string): Promise<ArrivalSlot[]> {
+/** Lấy khung giờ còn trống của 1 ngày. branchId null → CEP tự dùng chi nhánh mặc định. */
+export async function getArrivalAvailability(dateIso: string, branchId?: string): Promise<ArrivalSlot[]> {
   const data = await gql<{ calendarArrivalAvailability: ArrivalSlot[] }>(
     ARRIVAL_AVAILABILITY_QUERY,
-    { date: dateIso },
+    { date: dateIso, branchId: branchId ?? null },
   );
   return data.calendarArrivalAvailability ?? [];
+}
+
+export interface CalendarBranch {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+const BRANCHES_QUERY = `
+  query CalendarBranches {
+    calendarBranches { id name code }
+  }
+`;
+
+/** Lấy danh sách chi nhánh từ CEP (telesale chọn / hiển thị động, không hardcode). */
+export async function getCalendarBranches(): Promise<CalendarBranch[]> {
+  const data = await gql<{ calendarBranches: CalendarBranch[] }>(BRANCHES_QUERY);
+  return data.calendarBranches ?? [];
 }

@@ -19,7 +19,7 @@ import {
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { getArrivalAvailability, type ArrivalSlot } from "../lib/calendar";
+import { getArrivalAvailability, getCalendarBranches, type ArrivalSlot, type CalendarBranch } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
 function formatHm(iso: string): string {
@@ -63,8 +63,6 @@ function buildBookingDays(): DayOption[] {
   return out;
 }
 const bookingDays: DayOption[] = buildBookingDays();
-
-const branchName = "Mỹ Nhân Q1";
 
 function InfoRow({
   icon,
@@ -114,23 +112,34 @@ export default function LeadDetail({
   const [saving, setSaving] = useState(false);
   const [slots, setSlots] = useState<ArrivalSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [branch, setBranch] = useState<CalendarBranch | null>(null); // chi nhánh động từ CEP
   const [showDiscard, setShowDiscard] = useState(false); // popup xác nhận rời trang
 
   const showBooking = result === "BOOKED";
   const selDDMM = ddmm(selectedIso);
 
-  // Tải khung giờ thật từ CEP Calendar khi chọn BOOKED hoặc đổi ngày.
+  // Lấy chi nhánh động từ CEP (thay tên hardcode) khi mở phần đặt lịch.
+  useEffect(() => {
+    if (!showBooking || branch) return;
+    let cancelled = false;
+    getCalendarBranches()
+      .then((bs) => { if (!cancelled && bs.length) setBranch(bs[0]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [showBooking, branch]);
+
+  // Tải khung giờ thật từ CEP Calendar khi chọn BOOKED hoặc đổi ngày / chi nhánh.
   useEffect(() => {
     if (!showBooking) return;
     let cancelled = false;
     setLoadingSlots(true);
     setSlot(null);
-    getArrivalAvailability(selectedIso)
+    getArrivalAvailability(selectedIso, branch?.id)
       .then((s) => { if (!cancelled) setSlots(s); })
       .catch(() => { if (!cancelled) setSlots([]); })
       .finally(() => { if (!cancelled) setLoadingSlots(false); });
     return () => { cancelled = true; };
-  }, [showBooking, selectedIso]);
+  }, [showBooking, selectedIso, branch?.id]);
 
   // P2 — discard confirmation: popup khi user back với data đang nhập (thay window.confirm).
   const hasUnsavedData = !!result || notes.trim().length > 0;
@@ -177,7 +186,7 @@ export default function LeadDetail({
       if (isFinalState) {
         onSaved(`Đã cập nhật ghi chú cho ${lead.name}`);
       } else if (showBooking) {
-        onSaved(`Đã đặt lịch ${lead.name} · ${selDDMM} ${slot ? formatHm(slot) : ""} tại ${branchName}${noteSuffix}`);
+        onSaved(`Đã đặt lịch ${lead.name} · ${selDDMM} ${slot ? formatHm(slot) : ""} tại ${branch?.name ?? "cơ sở"}${noteSuffix}`);
       } else {
         const label = resultOptions.find((r) => r.key === result)!.label;
         onSaved(`Đã lưu kết quả: ${label}${noteSuffix}`);
@@ -400,7 +409,7 @@ export default function LeadDetail({
               <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">
                 <MapPin size={15} className="mt-0.5 shrink-0 text-rose-500" />
                 <span>
-                  <b className="text-slate-700">{branchName}</b> — ngày {selDDMM} đã có{" "}
+                  <b className="text-slate-700">{branch?.name ?? "Cơ sở"}</b> — ngày {selDDMM} đã có{" "}
                   <b className="text-slate-700">{slots.reduce((a, s) => a + s.booked, 0)}</b> cuộc hẹn
                 </span>
               </div>
