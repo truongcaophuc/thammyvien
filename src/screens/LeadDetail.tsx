@@ -470,18 +470,10 @@ export default function LeadDetail({
                         </div>
                         <div
                           className={`text-[10.5px] font-semibold ${
-                            on
-                              ? "text-white/85"
-                              : s.isPast
-                              ? "text-slate-400"
-                              : s.available <= 0
-                              ? "text-rose-500"
-                              : s.available === 1
-                              ? "text-amber-600"
-                              : "text-emerald-600"
+                            on ? "text-white/85" : disabled ? "text-slate-400" : "text-emerald-600"
                           }`}
                         >
-                          {s.isPast ? "Đã qua" : s.available <= 0 ? "Đầy" : `Còn ${s.available}/${s.capacity}`}
+                          {s.isPast ? "Đã qua" : s.available <= 0 ? "Hết chỗ" : `Còn ${s.available}/${s.capacity}`}
                         </div>
                       </button>
                     );
@@ -490,10 +482,10 @@ export default function LeadDetail({
                 )}
                 <div className="mt-3 flex items-center gap-4 text-[11.5px] text-slate-500">
                   <span className="flex items-center gap-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Trống
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Còn chỗ
                   </span>
                   <span className="flex items-center gap-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Đã có khách
+                    <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Hết chỗ
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="h-2.5 w-2.5 rounded-full bg-brand-600" /> Đang chọn
