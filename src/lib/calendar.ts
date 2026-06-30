@@ -47,3 +47,44 @@ export async function getCalendarBranches(): Promise<CalendarBranch[]> {
   const data = await gql<{ calendarBranches: CalendarBranch[] }>(BRANCHES_QUERY);
   return data.calendarBranches ?? [];
 }
+
+export interface LeadAppointment {
+  id: string;
+  branchId: string;
+  branchName: string;
+  appointmentDate: string; // "yyyy-MM-ddTHH:mm:ss" no-tz
+  status: string;
+}
+
+const LEAD_APPT_QUERY = `
+  query LeadAppointment($leadId: UUID!) {
+    calendarLeadAppointment(leadId: $leadId) {
+      id branchId branchName appointmentDate status
+    }
+  }
+`;
+
+/** Lịch hẹn hiện tại của 1 lead (đã đặt) — null nếu chưa có. */
+export async function getLeadAppointment(leadId: string): Promise<LeadAppointment | null> {
+  const data = await gql<{ calendarLeadAppointment: LeadAppointment | null }>(LEAD_APPT_QUERY, { leadId });
+  return data.calendarLeadAppointment ?? null;
+}
+
+const RESCHEDULE_MUTATION = `
+  mutation Reschedule($input: RescheduleAppointmentInput!) {
+    rescheduleTelesaleAppointment(input: $input) { success appointmentDate }
+  }
+`;
+
+/** Đổi lịch (chi nhánh + khung giờ) cho lịch hẹn telesale đã đặt. */
+export async function rescheduleAppointment(input: {
+  appointmentId: string;
+  branchId?: string;
+  appointmentDate: string;
+}): Promise<{ success: boolean; appointmentDate: string }> {
+  const data = await gql<{ rescheduleTelesaleAppointment: { success: boolean; appointmentDate: string } }>(
+    RESCHEDULE_MUTATION,
+    { input: { ...input, branchId: input.branchId ?? null } },
+  );
+  return data.rescheduleTelesaleAppointment;
+}

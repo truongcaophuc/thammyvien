@@ -18,7 +18,7 @@ import {
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { getArrivalAvailability, getCalendarBranches, type ArrivalSlot, type CalendarBranch } from "../lib/calendar";
+import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
 function formatHm(iso: string): string {
@@ -113,24 +113,41 @@ export default function LeadDetail({
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [branches, setBranches] = useState<CalendarBranch[]>([]); // danh sách chi nhánh từ CEP
   const [branch, setBranch] = useState<CalendarBranch | null>(null); // chi nhánh đang chọn
+  const [appt, setAppt] = useState<LeadAppointment | null>(null); // lịch đã đặt (lead scheduled)
+  const [editingAppt, setEditingAppt] = useState(false); // đang đổi lịch
   const [showDiscard, setShowDiscard] = useState(false); // popup xác nhận rời trang
 
   const showBooking = result === "BOOKED";
   const selDDMM = ddmm(selectedIso);
 
-  // Lấy chi nhánh động từ CEP (thay tên hardcode) khi mở phần đặt lịch.
+  // Lịch hẹn đã đặt của lead (khi scheduled) → hiện chi nhánh + giờ + cho đổi lịch.
   useEffect(() => {
-    if (!showBooking || branches.length) return;
+    if (lead.status !== "scheduled") return;
+    let cancelled = false;
+    getLeadAppointment(lead.id).then((a) => { if (!cancelled) setAppt(a); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [lead.status, lead.id]);
+
+  // Lấy chi nhánh động từ CEP khi mở đặt lịch / đổi lịch.
+  useEffect(() => {
+    if (!(showBooking || editingAppt) || branches.length) return;
     let cancelled = false;
     getCalendarBranches()
-      .then((bs) => { if (!cancelled) { setBranches(bs); if (bs.length) setBranch(bs[0]); } })
+      .then((bs) => {
+        if (cancelled) return;
+        setBranches(bs);
+        if (bs.length) {
+          const pre = editingAppt && appt ? bs.find((b) => b.id === appt.branchId) : null;
+          setBranch(pre ?? bs[0]);
+        }
+      })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [showBooking, branches.length]);
+  }, [showBooking, editingAppt, branches.length, appt]);
 
-  // Tải khung giờ thật từ CEP Calendar khi chọn BOOKED hoặc đổi ngày / chi nhánh.
+  // Tải khung giờ thật từ CEP khi mở đặt lịch / đổi lịch hoặc đổi ngày / chi nhánh.
   useEffect(() => {
-    if (!showBooking) return;
+    if (!(showBooking || editingAppt)) return;
     let cancelled = false;
     setLoadingSlots(true);
     setSlot(null);
@@ -139,7 +156,7 @@ export default function LeadDetail({
       .catch(() => { if (!cancelled) setSlots([]); })
       .finally(() => { if (!cancelled) setLoadingSlots(false); });
     return () => { cancelled = true; };
-  }, [showBooking, selectedIso, branch?.id]);
+  }, [showBooking, editingAppt, selectedIso, branch?.id]);
 
   // P2 — discard confirmation: popup khi user back với data đang nhập (thay window.confirm).
   const hasUnsavedData = !!result || notes.trim().length > 0;
@@ -150,6 +167,25 @@ export default function LeadDetail({
 
   const save = async () => {
     if (saving) return;
+
+    // Đổi lịch (reschedule) — lead đã đặt, user bấm "Đổi lịch".
+    if (editingAppt) {
+      if (!slot || !appt) return;
+      setSaving(true);
+      try {
+        const res = await rescheduleAppointment({ appointmentId: appt.id, branchId: branch?.id, appointmentDate: slot });
+        if (!res.success) throw new Error("BE trả success=false");
+        setAppt({ ...appt, branchId: branch?.id ?? appt.branchId, branchName: branch?.name ?? appt.branchName, appointmentDate: slot });
+        setEditingAppt(false);
+        onSaved(`Đã đổi lịch ${lead.name} · ${ddmm(slot)} ${formatHm(slot)} tại ${branch?.name ?? "cơ sở"}`);
+      } catch (e) {
+        onSaved(`⚠ Lỗi: ${e instanceof Error ? e.message : "đổi lịch thất bại"}`);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     // Final state: cho phép save khi user chỉ ghi notes (không cần chọn result).
     // BE map fallback result theo current status, không đổi Customer.Status thực tế.
     if (!isFinalState && !result) return;
@@ -179,6 +215,7 @@ export default function LeadDetail({
         result: effectiveResult,
         notes: notes.trim() || undefined,
         appointmentDate,
+        locationId: (!isFinalState && showBooking) ? branch?.id : undefined,
       });
 
       if (!res.success) throw new Error("BE trả success=false");
@@ -200,7 +237,7 @@ export default function LeadDetail({
   };
 
   const saveDisabled = saving
-    || (isFinalState ? !notes.trim() : !result || (showBooking && !slot));
+    || (editingAppt ? !slot : isFinalState ? !notes.trim() : !result || (showBooking && !slot));
 
   return (
     <div className="min-h-full pb-28">
@@ -348,11 +385,37 @@ export default function LeadDetail({
           </div>
           )}
 
-          {/* Đặt lịch hẹn — collapsible khi chọn BOOKED */}
-          {!isFinalState && showBooking && (
+          {/* Lịch đã đặt (lead scheduled) — hiện chi nhánh + giờ + nút Đổi lịch */}
+          {isFinalState && lead.status === "scheduled" && appt && !editingAppt && (
+            <div className="mb-1 space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+              <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-emerald-600">
+                <CalendarDays size={16} /> Lịch hẹn đã đặt
+              </div>
+              <div className="text-[14.5px] text-slate-800">
+                <b>{appt.branchName || "Cơ sở"}</b>
+                <span className="text-slate-500"> · {ddmm(appt.appointmentDate.slice(0, 10))} · {formatHm(appt.appointmentDate)}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedIso(appt.appointmentDate.slice(0, 10));
+                  if (branches.length) setBranch(branches.find((b) => b.id === appt.branchId) ?? branches[0]);
+                  setEditingAppt(true);
+                }}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand-50 px-4 py-2 text-[13.5px] font-bold text-brand-700 transition-colors hover:bg-brand-100"
+              >
+                <CalendarDays size={15} /> Đổi lịch
+              </button>
+            </div>
+          )}
+
+          {/* Đặt lịch hẹn — khi chọn BOOKED (mới) hoặc đổi lịch (edit) */}
+          {((!isFinalState && showBooking) || editingAppt) && (
             <div className="mt-4 space-y-4 rounded-2xl border border-emerald-100 bg-white p-4">
               <div className="flex items-center gap-2 text-[14.5px] font-bold text-slate-800">
-                <CalendarDays size={18} className="text-emerald-600" /> Đặt lịch hẹn tại cơ sở
+                <CalendarDays size={18} className="text-emerald-600" /> {editingAppt ? "Đổi lịch hẹn" : "Đặt lịch hẹn tại cơ sở"}
+                {editingAppt && (
+                  <button onClick={() => setEditingAppt(false)} className="ml-auto cursor-pointer text-[12.5px] font-semibold text-slate-400 hover:text-slate-600">Hủy</button>
+                )}
               </div>
 
               {/* Chọn cơ sở */}
@@ -530,11 +593,13 @@ export default function LeadDetail({
           ) : (
             <>
               <Save size={18} />{" "}
-              {isFinalState
-                ? "Cập nhật ghi chú"
-                : showBooking
-                  ? "Xác nhận đặt lịch"
-                  : "Lưu kết quả"}
+              {editingAppt
+                ? "Lưu đổi lịch"
+                : isFinalState
+                  ? "Cập nhật ghi chú"
+                  : showBooking
+                    ? "Xác nhận đặt lịch"
+                    : "Lưu kết quả"}
             </>
           )}
         </button>

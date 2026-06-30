@@ -8,6 +8,8 @@ export interface SaveCallResultInput {
   notes?: string;
   // ISO 8601 datetime. Chỉ truyền khi result=BOOKED.
   appointmentDate?: string;
+  // Chi nhánh đặt lịch (BOOKED). Null → CEP dùng chi nhánh mặc định.
+  locationId?: string;
 }
 
 export interface SaveCallResultPayload {
