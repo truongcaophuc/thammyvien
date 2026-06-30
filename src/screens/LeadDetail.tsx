@@ -4,7 +4,6 @@ import {
   Phone,
   FileText,
   Target,
-  StickyNote,
   Clock,
   PhoneMissed,
   CheckCircle2,
@@ -255,7 +254,6 @@ export default function LeadDetail({
           </div>
           <div className="divide-y divide-slate-100">
             <InfoRow icon={<Target size={16} />} label="Nhu cầu" value={lead.need} />
-            <InfoRow icon={<StickyNote size={16} />} label="Ghi chú" value={lead.note} />
             <InfoRow icon={<Clock size={16} />} label="Nhận lúc" value={lead.receivedAt} />
           </div>
         </div>
