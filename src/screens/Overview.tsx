@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   PhoneOutgoing,
   PhoneCall,
@@ -69,6 +70,7 @@ export default function Overview({
   onStartCall: () => void;
   onSeeAllAppointments: () => void;
 }) {
+  const navigate = useNavigate();
   const [data, setData] = useState<OverviewData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -220,7 +222,8 @@ export default function Overview({
             return (
               <div
                 key={a.id}
-                className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-card"
+                onClick={() => navigate(`/lead/${a.customerId}`)}
+                className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white p-3 shadow-card transition-transform active:scale-[0.99]"
               >
                 <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-brand-50 leading-none">
                   <span className="text-[15px] font-extrabold text-brand-700">
@@ -246,6 +249,7 @@ export default function Overview({
                 </div>
                 <a
                   href={`tel:${a.phone.replace(/\s/g, "")}`}
+                  onClick={(e) => e.stopPropagation()}
                   aria-label={`Gọi nhắc ${a.customerName}`}
                   className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-brand-600 text-white shadow-soft transition-transform active:scale-95"
                 >

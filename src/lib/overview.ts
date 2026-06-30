@@ -3,6 +3,7 @@ import { gql } from "./graphql";
 
 export interface OverviewAppointment {
   id: string;
+  customerId: string;
   customerName: string;
   phone: string;
   meetDate: string; // ISO 8601
@@ -45,6 +46,7 @@ const OVERVIEW_QUERY = `
       progressTotal
       upcomingAppointments {
         id
+        customerId
         customerName
         phone
         meetDate
