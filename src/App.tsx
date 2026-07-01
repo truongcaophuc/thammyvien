@@ -19,6 +19,7 @@ import CallScriptSheet from "./modals/CallScriptSheet";
 import type { Lead } from "./data";
 import { checkSession, type AgentProfile } from "./lib/auth";
 import { fetchLeadById } from "./lib/leads";
+import { resyncPush } from "./lib/pushNotification";
 
 type AuthState = "checking" | "guest" | "authed";
 
@@ -52,6 +53,12 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // Self-heal push: khi đã đăng nhập, đồng bộ lại subscription hiện tại lên server
+  // (endpoint có thể đã xoay/chết khi app đóng) → không cần user tắt/bật thủ công.
+  useEffect(() => {
+    if (authState === "authed") void resyncPush();
+  }, [authState]);
 
   const showToast = (msg: string) => {
     setToast(msg);

@@ -100,3 +100,76 @@ self.addEventListener('message', (event) => {
     self.skipWaiting()
   }
 })
+
+// ===== Self-heal: push service (FCM/Apple) xoay/vô hiệu endpoint → tự đăng ký lại =====
+// Chạy cả khi app ĐÓNG. Auth qua cookie same-origin nên fetch kèm credentials.
+function b64ToUint8(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  const out = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
+  return out
+}
+function bufToB64Url(buf: ArrayBuffer | null): string {
+  if (!buf) return ''
+  const bytes = new Uint8Array(buf)
+  let bin = ''
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+self.addEventListener('pushsubscriptionchange', ((event: ExtendableEvent) => {
+  const ev = event as ExtendableEvent & {
+    oldSubscription?: PushSubscription | null
+    newSubscription?: PushSubscription | null
+  }
+  ev.waitUntil(
+    (async () => {
+      const oldEndpoint = ev.oldSubscription?.endpoint
+      try {
+        let newSub = ev.newSubscription ?? null
+        if (!newSub) {
+          // VAPID public key: ưu tiên từ sub cũ, fallback fetch server
+          let appKey: BufferSource | null | undefined =
+            ev.oldSubscription?.options?.applicationServerKey
+          if (!appKey) {
+            const r = await fetch('/api/push/vapid-public-key', { credentials: 'include' })
+            const j = (await r.json()) as { publicKey: string }
+            appKey = b64ToUint8(j.publicKey) as BufferSource
+          }
+          if (!appKey) return
+          newSub = await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appKey,
+          })
+        }
+        if (!newSub) return
+        const json = newSub.toJSON()
+        // Lưu endpoint MỚI
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: newSub.endpoint,
+            p256dh: json.keys?.p256dh ?? bufToB64Url(newSub.getKey('p256dh')),
+            auth: json.keys?.auth ?? bufToB64Url(newSub.getKey('auth')),
+            userAgent: navigator.userAgent,
+          }),
+        })
+        // Dọn endpoint CŨ (đã chết) khỏi server
+        if (oldEndpoint && oldEndpoint !== newSub.endpoint) {
+          await fetch('/api/push/unsubscribe', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: oldEndpoint }),
+          })
+        }
+      } catch {
+        // best-effort — app sẽ re-sync khi mở lần sau
+      }
+    })(),
+  )
+}) as EventListener)

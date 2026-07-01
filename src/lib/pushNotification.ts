@@ -138,6 +138,33 @@ export async function unsubscribePush(): Promise<{ ok: boolean; reason?: string 
   return { ok: true };
 }
 
+/**
+ * Self-heal: đồng bộ subscription hiện tại lên server (gọi khi mở app).
+ * - Chưa cấp quyền hoặc chưa có subscription → bỏ qua, KHÔNG prompt.
+ * - Có subscription → re-POST endpoint hiện tại. Server idempotent theo endpoint,
+ *   nên nếu endpoint đã xoay/đổi thì server nhận đúng cái mới; cái cũ chết sẽ bị
+ *   dọn khi gửi gặp 404/410. Nhờ vậy user không phải tắt/bật lại thủ công.
+ */
+export async function resyncPush(): Promise<void> {
+  try {
+    if (!isPushSupported() || Notification.permission !== "granted") return;
+    const sub = await getCurrentSubscription();
+    if (!sub) return;
+    const json = sub.toJSON();
+    await api("/api/push/subscribe", {
+      method: "POST",
+      body: {
+        endpoint: sub.endpoint,
+        p256dh: json.keys?.p256dh ?? arrayBufferToBase64Url(sub.getKey("p256dh")),
+        auth: json.keys?.auth ?? arrayBufferToBase64Url(sub.getKey("auth")),
+        userAgent: navigator.userAgent,
+      },
+    });
+  } catch {
+    // best-effort — sẽ heal ở lần mở app sau
+  }
+}
+
 // Gọi test endpoint — BE sẽ gửi 1 push về cho mọi subscription của user hiện tại.
 export async function sendTestPush(): Promise<{ ok: boolean; sent?: number; reason?: string }> {
   try {
