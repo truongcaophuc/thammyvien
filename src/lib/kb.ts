@@ -133,13 +133,18 @@ export function cleanSnippet(s: string): string {
     .trim();
 }
 
-// Gộp breadcrumb lặp liền kề: "A > A > B" → "A › B".
-export function dedupePath(s: string): string {
-  return (s || "")
-    .split(">")
-    .map((x) => x.trim())
-    .filter((x, i, a) => x !== "" && x !== a[i - 1])
-    .join(" › ");
+// Dọn breadcrumb: bỏ đoạn đầu trùng tiêu đề + gộp đoạn lặp liền kề.
+// "Tiêu đề > Tiêu đề > Mục" (title="Tiêu đề") → "Mục".
+export function dedupePath(s: string, title?: string): string {
+  const t = (title || "").trim();
+  const out: string[] = [];
+  for (const seg of (s || "").split(">").map((x) => x.trim())) {
+    if (seg === "") continue;
+    if (out.length === 0 && t && seg === t) continue; // đoạn đầu trùng tiêu đề
+    if (seg === out[out.length - 1]) continue; // lặp liền kề
+    out.push(seg);
+  }
+  return out.join(" › ");
 }
 
 // Lọc các dòng <li> (cho trang dạng danh sách nguyên tắc).

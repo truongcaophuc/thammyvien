@@ -20,7 +20,6 @@ import {
   parseKbListItems,
   cleanKbHtml,
   cleanSnippet,
-  dedupePath,
   kbCache,
   type KbTag,
   type KbHit,
@@ -354,9 +353,6 @@ function ResultsView({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-bold text-slate-800">{h.title || "(không tiêu đề)"}</div>
-                  {dedupePath(h.heading_path) && (
-                    <div className="mt-0.5 truncate text-[11px] text-slate-400">{dedupePath(h.heading_path)}</div>
-                  )}
                   <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-slate-500">
                     {cleanSnippet(h.chunk_text)}
                   </p>
