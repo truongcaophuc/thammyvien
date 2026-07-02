@@ -7,11 +7,13 @@ export default function Sheet({
   onClose,
   children,
   footer,
+  bg = "#f6f7fb",
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  bg?: string;
 }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -35,7 +37,8 @@ export default function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative flex max-h-[90vh] w-full max-w-md flex-col rounded-t-2xl2 bg-[#f6f7fb] shadow-2xl animate-[slideUp_.25s_cubic-bezier(.16,1,.3,1)]"
+        className="relative flex max-h-[90vh] w-full max-w-md flex-col rounded-t-2xl2 shadow-2xl animate-[slideUp_.25s_cubic-bezier(.16,1,.3,1)]"
+        style={{ background: bg }}
       >
         <div className="flex items-center justify-between rounded-t-2xl2 bg-white px-4 py-3.5 shadow-card">
           <span className="text-[16px] font-extrabold text-slate-800">{title}</span>

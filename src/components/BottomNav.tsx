@@ -1,9 +1,10 @@
-import { LayoutGrid, ListChecks, User } from "lucide-react";
+import { LayoutGrid, ListChecks, BookOpen, User } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const items: { to: string; label: string; icon: typeof LayoutGrid }[] = [
   { to: "/overview", label: "Tổng quan", icon: LayoutGrid },
   { to: "/list", label: "Danh sách", icon: ListChecks },
+  { to: "/kb", label: "Tra cứu KB", icon: BookOpen },
   { to: "/profile", label: "Cá nhân", icon: User },
 ];
 
@@ -12,7 +13,7 @@ export default function BottomNav() {
   // Content area được pad `pb-[88px]` để không bị che.
   return (
     <nav className="absolute inset-x-0 bottom-0 z-20 border-t border-slate-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-      <div className="mx-auto grid max-w-md grid-cols-3 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2">
+      <div className="mx-auto grid max-w-md grid-cols-4 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2">
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

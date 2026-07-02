@@ -12,6 +12,7 @@ import {
 import BottomNav from "./components/BottomNav";
 import Overview from "./screens/Overview";
 import CallList, { type FilterKey } from "./screens/CallList";
+import KbSearch from "./screens/KbSearch";
 import Profile from "./screens/Profile";
 import LeadDetail from "./screens/LeadDetail";
 import Login from "./screens/Login";
@@ -103,6 +104,7 @@ export default function App() {
           <Route index element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<OverviewRoute />} />
           <Route path="list" element={<ListRoute />} />
+          <Route path="kb" element={<KbSearch />} />
           <Route
             path="profile"
             element={
