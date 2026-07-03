@@ -224,7 +224,7 @@ function PushNotificationCard() {
               ? "Đang nhận nhắc lịch hẹn và khách hàng mới được phân bổ"
               : blockedByBrowser
                 ? "Đã bị chặn — vào cài đặt trình duyệt để cấp lại quyền"
-                : "Nhắc lịch hẹn trước 15 phút và thông báo khi có khách hàng mới"}
+                : "Nhắc lịch hẹn trước 1 ngày và thông báo khi có khách hàng mới"}
           </div>
         </div>
         <button
