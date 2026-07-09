@@ -21,6 +21,7 @@ interface MyLeadsResponse {
     phone: string;
     source: string;
     note: string;
+    need: string | null; // nhu cầu từ intake (Prospect.AdditionalJsonData.source.need); null nếu lead không qua form
     status: ServerStatus;
     receivedAt: string; // ISO 8601
     history: ServerCallHistory[];
@@ -35,6 +36,7 @@ const MY_LEADS_QUERY = `
       phone
       source
       note
+      need
       status
       receivedAt
       history {
@@ -58,7 +60,7 @@ export async function fetchMyLeads(): Promise<Lead[]> {
       name: l.name,
       phone: l.phone,
       source: l.source,
-      need: extractNeed(l.note),
+      need: l.need && l.need.trim() ? l.need.trim() : extractNeed(l.note),
       note: l.note,
       receivedAt: formatReceivedAt(received),
       status,
