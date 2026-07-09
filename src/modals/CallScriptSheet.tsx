@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   MessageCircleMore, Lightbulb, Gem, CalendarCheck,
-  BookOpen, Sparkles, Loader2, Tag,
+  Sparkles, Loader2,
   ChevronDown, RefreshCw,
 } from "lucide-react";
 import type { Lead } from "../data";
 import Sheet from "../components/Sheet";
-import { fetchCallScript, generateCallScript, formatPriceRange, callScriptCache, type CallScriptHit, type AiCallScript } from "../lib/callScript";
+import { generateCallScript, callScriptCache, type AiCallScript } from "../lib/callScript";
 
 const icons = [MessageCircleMore, Lightbulb, Gem, CalendarCheck];
 const tints = [
@@ -23,29 +23,6 @@ export default function CallScriptSheet({
   lead: Lead;
   onClose: () => void;
 }) {
-  // ===== KB tham khảo (auto-load, ẩn trong accordion) =====
-  const [hits, setHits] = useState<CallScriptHit[] | null>(() => callScriptCache.getKb(lead.id));
-  const [kbErr, setKbErr] = useState<string | null>(null);
-  const [kbOpen, setKbOpen] = useState(false);
-  const [kbExpanded, setKbExpanded] = useState<Set<number>>(new Set());
-  const toggleKb = (i: number) => setKbExpanded((prev) => {
-    const next = new Set(prev);
-    next.has(i) ? next.delete(i) : next.add(i);
-    return next;
-  });
-
-  useEffect(() => {
-    if (callScriptCache.getKb(lead.id)) return; // đã có cache → khỏi fetch
-    const q = (lead.need || lead.note || "").trim();
-    if (!q) { setHits([]); return; }
-    let cancelled = false;
-    setHits(null); setKbErr(null);
-    fetchCallScript(q)
-      .then((h) => { if (!cancelled) { setHits(h); callScriptCache.setKb(lead.id, h); } })
-      .catch((e) => { if (!cancelled) setKbErr(e instanceof Error ? e.message : "Không tải được gợi ý"); });
-    return () => { cancelled = true; };
-  }, [lead.id, lead.need, lead.note]);
-
   // ===== Kịch bản AI (LLM) =====
   const [ai, setAi] = useState<AiCallScript | null>(() => callScriptCache.getScript(lead.id));
   const [aiLoading, setAiLoading] = useState(false);
@@ -155,64 +132,6 @@ export default function CallScriptSheet({
           </>
         )}
 
-        {/* Tách vùng "tham khảo" khỏi vùng "hành động" để đỡ bấm nhầm */}
-        <div className="flex items-center gap-2 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-slate-300">
-          <span className="h-px flex-1 bg-slate-200" /> Tham khảo <span className="h-px flex-1 bg-slate-200" />
-        </div>
-
-        {/* ===== Tài liệu tham khảo KB (accordion) ===== */}
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
-          <button
-            onClick={() => setKbOpen((o) => !o)}
-            className="flex w-full cursor-pointer items-center gap-2 p-3 text-left"
-          >
-            <BookOpen size={15} className="shrink-0 text-slate-400" />
-            <span className="flex-1 text-[13px] font-semibold text-slate-600">
-              Tài liệu tham khảo (KB){hits ? ` · ${hits.length}` : ""}
-            </span>
-            <ChevronDown size={17} className={`shrink-0 text-slate-400 transition-transform ${kbOpen ? "rotate-180" : ""}`} />
-          </button>
-
-          {kbOpen && (
-            <div className="space-y-2 border-t border-slate-100 bg-slate-50/70 p-3">
-              {hits === null && !kbErr && (
-                <div className="flex items-center justify-center gap-2 py-3 text-[12.5px] text-slate-400">
-                  <Loader2 size={15} className="animate-spin" /> Đang tải…
-                </div>
-              )}
-              {kbErr && <div className="rounded-xl bg-rose-50 p-3 text-center text-[12.5px] text-rose-600">{kbErr}</div>}
-              {hits && hits.length === 0 && !kbErr && (
-                <div className="py-2 text-center text-[12.5px] text-slate-400">Không có tài liệu phù hợp.</div>
-              )}
-              {hits?.map((h, i) => {
-                const price = formatPriceRange(h.priceFromVnd, h.priceToVnd);
-                const open = kbExpanded.has(i);
-                return (
-                  <button
-                    key={i}
-                    onClick={() => toggleKb(i)}
-                    className="w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[13px] font-bold text-slate-800">{h.title || h.headingPath}</span>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {price && (
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                            <Tag size={11} /> {price}
-                          </span>
-                        )}
-                        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
-                      </div>
-                    </div>
-                    <p className={`mt-1 whitespace-pre-line text-[12px] leading-relaxed text-slate-500 ${open ? "" : "line-clamp-3"}`}>
-                      {h.chunkText}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
     </Sheet>
   );

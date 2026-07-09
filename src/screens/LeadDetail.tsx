@@ -14,11 +14,14 @@ import {
   Save,
   Pencil,
   Loader2,
+  CalendarX,
+  PhoneForwarded,
+  Ban,
 } from "lucide-react";
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment } from "../lib/calendar";
+import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
 function formatHm(iso: string): string {
@@ -116,13 +119,23 @@ export default function LeadDetail({
   const [appt, setAppt] = useState<LeadAppointment | null>(null); // lịch đã đặt (lead scheduled)
   const [editingAppt, setEditingAppt] = useState(false); // đang đổi lịch
   const [showDiscard, setShowDiscard] = useState(false); // popup xác nhận rời trang
+  const [showCancel, setShowCancel] = useState(false); // sheet hủy lịch hẹn
+  const [cancelReason, setCancelReason] = useState(""); // lý do hủy
+  const [cancelErr, setCancelErr] = useState(false); // báo thiếu lý do (highlight ô)
+  const [cancelling, setCancelling] = useState<CancelLeadOutcome | null>(null); // đang gọi mutation hủy (nút nào)
 
   const showBooking = result === "BOOKED";
   const selDDMM = ddmm(selectedIso);
 
-  // Lịch hẹn đã đặt của lead (khi scheduled) → hiện chi nhánh + giờ + cho đổi lịch.
+  // Lịch ở trạng thái cuối (hủy/không đến/hoàn thành) → hiện làm LỊCH SỬ, không cho đổi/hủy.
+  const TERMINAL_APPT = ["cancelled", "no_show", "completed"];
+  const isTerminalAppt = !!appt && TERMINAL_APPT.includes(appt.status);
+  const apptStatusLabel = (s: string): string =>
+    (({ pending: "Chờ xác nhận", confirmed: "Đã xác nhận", arrived: "Khách đang ở viện", checked_in: "Đang điều trị", completed: "Đã hoàn thành", cancelled: "Đã hủy", no_show: "Không đến" }) as Record<string, string>)[s] ?? s;
+
+  // Lịch hẹn của lead: scheduled → lịch active (đổi lịch); callback/closed → lịch cũ đã hủy (lịch sử + lý do).
   useEffect(() => {
-    if (lead.status !== "scheduled") return;
+    if (lead.status !== "scheduled" && lead.status !== "callback" && lead.status !== "closed") return;
     let cancelled = false;
     getLeadAppointment(lead.id).then((a) => { if (!cancelled) setAppt(a); }).catch(() => {});
     return () => { cancelled = true; };
@@ -233,6 +246,35 @@ export default function LeadDetail({
       onSaved(`⚠ Lỗi: ${msg}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Hủy lịch hẹn — cách B: 2 lựa chọn số phận lead.
+  //   "callback" → Hủy & gọi lại (lead về "Gọi lại", vẫn theo)
+  //   "close"    → Hủy & đóng lead (khách từ chối hẳn)
+  const doCancel = async (outcome: CancelLeadOutcome) => {
+    if (!appt || cancelling) return;
+    if (!cancelReason.trim()) {
+      // Chưa nhập lý do → highlight ô + focus, không disable nút (để user bấm là có phản hồi).
+      setCancelErr(true);
+      document.getElementById("cancelReasonInput")?.focus();
+      return;
+    }
+    setCancelling(outcome);
+    try {
+      const res = await cancelAppointment({ appointmentId: appt.id, reason: cancelReason.trim(), leadOutcome: outcome });
+      if (!res.success) throw new Error("BE trả success=false");
+      setShowCancel(false);
+      setCancelReason("");
+      onSaved(
+        outcome === "callback"
+          ? `Đã hủy lịch ${lead.name} — chuyển sang "Gọi lại"`
+          : `Đã hủy lịch & đóng lead ${lead.name}`,
+      );
+    } catch (e) {
+      onSaved(`⚠ Lỗi: ${e instanceof Error ? e.message : "hủy lịch thất bại"}`);
+    } finally {
+      setCancelling(null);
     }
   };
 
@@ -385,8 +427,8 @@ export default function LeadDetail({
           </div>
           )}
 
-          {/* Lịch đã đặt (lead scheduled) — hiện chi nhánh + giờ + nút Đổi lịch */}
-          {isFinalState && lead.status === "scheduled" && appt && !editingAppt && (
+          {/* Lịch đã đặt (lead scheduled, còn active) — hiện chi nhánh + giờ + nút Đổi lịch */}
+          {lead.status === "scheduled" && appt && !isTerminalAppt && !editingAppt && (
             <div className="mb-1 space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
               <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-emerald-600">
                 <CalendarDays size={16} /> Lịch hẹn đã đặt
@@ -395,16 +437,43 @@ export default function LeadDetail({
                 <b>{appt.branchName || "Cơ sở"}</b>
                 <span className="text-slate-500"> · {ddmm(appt.appointmentDate.slice(0, 10))} · {formatHm(appt.appointmentDate)}</span>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedIso(appt.appointmentDate.slice(0, 10));
-                  if (branches.length) setBranch(branches.find((b) => b.id === appt.branchId) ?? branches[0]);
-                  setEditingAppt(true);
-                }}
-                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand-50 px-4 py-2 text-[13.5px] font-bold text-brand-700 transition-colors hover:bg-brand-100"
-              >
-                <CalendarDays size={15} /> Đổi lịch
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedIso(appt.appointmentDate.slice(0, 10));
+                    if (branches.length) setBranch(branches.find((b) => b.id === appt.branchId) ?? branches[0]);
+                    setEditingAppt(true);
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand-50 px-4 py-2 text-[13.5px] font-bold text-brand-700 transition-colors hover:bg-brand-100"
+                >
+                  <CalendarDays size={15} /> Đổi lịch
+                </button>
+                <button
+                  onClick={() => { setCancelReason(""); setCancelErr(false); setShowCancel(true); }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-rose-50 px-4 py-2 text-[13.5px] font-bold text-rose-600 transition-colors hover:bg-rose-100"
+                >
+                  <CalendarX size={15} /> Hủy lịch
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Lịch hẹn trước đã kết thúc (hủy / không đến / hoàn thành) — LỊCH SỬ, không nút */}
+          {appt && isTerminalAppt && !editingAppt && (
+            <div className="mb-1 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-slate-500">
+                <CalendarDays size={16} /> Lịch hẹn trước
+              </div>
+              <div className="text-[14.5px] text-slate-700">
+                <b>{appt.branchName || "Cơ sở"}</b>
+                <span className="text-slate-500"> · {ddmm(appt.appointmentDate.slice(0, 10))} · {formatHm(appt.appointmentDate)}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-lg px-2.5 py-1 text-[12px] font-bold ${appt.status === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                  {apptStatusLabel(appt.status)}
+                </span>
+                {appt.reason && <span className="text-[12.5px] text-slate-500">· {appt.reason}</span>}
+              </div>
             </div>
           )}
 
@@ -633,6 +702,80 @@ export default function LeadDetail({
                 Bỏ và quay lại
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sheet hủy lịch hẹn — cách B: nhập lý do + 2 lựa chọn số phận lead */}
+      {showCancel && appt && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          onClick={() => { if (!cancelling) setShowCancel(false); }}
+        >
+          <div
+            className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-xl sm:rounded-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-[16px] font-bold text-slate-900">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+                <CalendarX size={18} />
+              </span>
+              Hủy lịch hẹn
+            </div>
+            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[13.5px] text-slate-600">
+              <b className="text-slate-800">{appt.branchName || "Cơ sở"}</b>
+              <span> · {ddmm(appt.appointmentDate.slice(0, 10))} · {formatHm(appt.appointmentDate)}</span>
+            </div>
+
+            <label className="mt-4 block text-[13px] font-semibold text-slate-600">
+              Lý do hủy <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="cancelReasonInput"
+              value={cancelReason}
+              onChange={(e) => { setCancelReason(e.target.value); if (cancelErr) setCancelErr(false); }}
+              rows={2}
+              placeholder="VD: Khách bận, xin dời/hủy…"
+              className={`mt-1.5 w-full resize-none rounded-xl border-2 px-3 py-2 text-[14px] text-slate-800 outline-none ${cancelErr ? "border-rose-400 focus:border-rose-500" : "border-slate-200 focus:border-brand-400"}`}
+            />
+            {cancelErr && <div className="mt-1 text-[12.5px] font-semibold text-rose-500">Vui lòng nhập lý do hủy</div>}
+
+            <div className="mt-4 space-y-2">
+              <button
+                disabled={!!cancelling}
+                onClick={() => doCancel("callback")}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-2xl border-2 border-brand-100 bg-brand-50 px-4 py-3 text-left transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+                  {cancelling === "callback" ? <Loader2 size={18} className="animate-spin" /> : <PhoneForwarded size={18} />}
+                </span>
+                <span>
+                  <span className="block text-[14.5px] font-bold text-brand-700">Hủy &amp; gọi lại</span>
+                  <span className="block text-[12.5px] text-slate-500">Lead về "Gọi lại" — bạn liên hệ đặt lại sau</span>
+                </span>
+              </button>
+              <button
+                disabled={!!cancelling}
+                onClick={() => doCancel("close")}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-2xl border-2 border-rose-100 bg-rose-50 px-4 py-3 text-left transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                  {cancelling === "close" ? <Loader2 size={18} className="animate-spin" /> : <Ban size={18} />}
+                </span>
+                <span>
+                  <span className="block text-[14.5px] font-bold text-rose-600">Hủy &amp; đóng lead</span>
+                  <span className="block text-[12.5px] text-slate-500">Khách không quan tâm nữa — đóng lead</span>
+                </span>
+              </button>
+            </div>
+
+            <button
+              disabled={!!cancelling}
+              onClick={() => setShowCancel(false)}
+              className="mt-3 w-full cursor-pointer rounded-xl py-2.5 text-[14px] font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Đóng
+            </button>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 // KB (Knowledge Base) — gọi CEP /api/kb/* qua api() (cookie auth; WebApi filter fallback JWT).
-// Trùng nguồn với trang tra cứu KB bên CEP web.
+// Trùng nguồn với trang dsds bên CEP web.
 import { api } from "./api";
 
 export interface KbTag {
@@ -107,6 +107,11 @@ export async function kbPageByTag(key: string, value: string): Promise<KbPage> {
 export function cleanKbHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html || "", "text/html");
   doc.querySelector("h1")?.remove();
+  // Bỏ footer nguồn/tag cuối trang: ".mn-foot" (hoặc đoạn bắt đầu "Nguồn: KB").
+  doc.querySelectorAll(".mn-foot").forEach((el) => el.remove());
+  doc.querySelectorAll("p,div").forEach((el) => {
+    if (/^Nguồn:\s*KB/i.test((el.textContent || "").trim())) el.remove();
+  });
   const heads = Array.from(doc.querySelectorAll("h1,h2,h3,h4,h5,h6"));
   for (const hd of heads) {
     const t = (hd.textContent || "").trim().toLowerCase();

@@ -4,7 +4,7 @@ import { NavLink } from "react-router-dom";
 const items: { to: string; label: string; icon: typeof LayoutGrid }[] = [
   { to: "/overview", label: "Tổng quan", icon: LayoutGrid },
   { to: "/list", label: "Danh sách", icon: ListChecks },
-  { to: "/kb", label: "Tra cứu KB", icon: BookOpen },
+  { to: "/kb", label: "Tra cứu", icon: BookOpen },
   { to: "/profile", label: "Cá nhân", icon: User },
 ];
 

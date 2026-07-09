@@ -54,12 +54,13 @@ export interface LeadAppointment {
   branchName: string;
   appointmentDate: string; // "yyyy-MM-ddTHH:mm:ss" no-tz
   status: string;
+  reason: string; // lý do hủy/không đến (nếu status terminal)
 }
 
 const LEAD_APPT_QUERY = `
   query LeadAppointment($leadId: UUID!) {
     calendarLeadAppointment(leadId: $leadId) {
-      id branchId branchName appointmentDate status
+      id branchId branchName appointmentDate status reason
     }
   }
 `;
@@ -87,4 +88,26 @@ export async function rescheduleAppointment(input: {
     { input: { ...input, branchId: input.branchId ?? null } },
   );
   return data.rescheduleTelesaleAppointment;
+}
+
+/** Lead sau khi hủy lịch: "callback" → về "Gọi lại" (vẫn theo); "close" → đóng lead. */
+export type CancelLeadOutcome = "callback" | "close";
+
+const CANCEL_MUTATION = `
+  mutation CancelAppt($input: CancelAppointmentInput!) {
+    cancelTelesaleAppointment(input: $input) { success }
+  }
+`;
+
+/** Hủy lịch hẹn đã đặt (kèm lý do). leadOutcome quyết định số phận lead. */
+export async function cancelAppointment(input: {
+  appointmentId: string;
+  reason: string;
+  leadOutcome: CancelLeadOutcome;
+}): Promise<{ success: boolean }> {
+  const data = await gql<{ cancelTelesaleAppointment: { success: boolean } }>(
+    CANCEL_MUTATION,
+    { input },
+  );
+  return data.cancelTelesaleAppointment;
 }

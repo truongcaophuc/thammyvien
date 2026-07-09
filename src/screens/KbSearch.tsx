@@ -142,7 +142,7 @@ export default function KbSearch() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch(query)}
-            placeholder="Tìm nội dung KB…"
+            placeholder="Tìm nội dung…"
             className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-slate-400"
           />
           {query && (
@@ -225,7 +225,7 @@ export default function KbSearch() {
 
       {/* Sheet: Mục lục */}
       {tocOpen && (
-        <Sheet title="Mục lục KB" onClose={() => setTocOpen(false)} bg="#ffffff">
+        <Sheet title="Mục lục" onClose={() => setTocOpen(false)} bg="#ffffff">
           <div className="px-4 pb-4">
             <TocView toc={toc} focusShelf={focusShelf} onOpen={openPage} />
           </div>
