@@ -20,6 +20,10 @@ export interface Lead {
   status: LeadStatus;
   badge?: string; // nhãn phụ hiển thị trên card
   subtitle?: string; // dòng phụ
+  // Nguồn của trạng thái "Gọi lại": "telesale" = telesale tự hẹn; "reception" = tiếp tân hủy lịch trả về.
+  callbackSource?: "telesale" | "reception" | "";
+  callbackReason?: string; // lý do (chủ yếu khi reception trả về)
+  isHot?: boolean; // cờ "Quan tâm / đang cân nhắc" (warm lead), telesale bật/tắt
   history: CallHistory[];
 }
 

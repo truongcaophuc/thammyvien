@@ -52,7 +52,7 @@ export interface KbPage {
 export const kbCache: {
   tags: KbTag[] | null;
   toc: KbTocShelf[] | null;
-  pinned: { name: string; items: string[] } | null;
+  pinned: { name: string; html: string } | null;
 } = { tags: null, toc: null, pinned: null };
 
 function qs(o: Record<string, string | number | undefined>): string {

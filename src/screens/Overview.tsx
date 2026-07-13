@@ -27,14 +27,21 @@ function StatCard({
   ring,
   iconBg,
   sub,
+  subTone = "rose",
 }: {
   icon: React.ReactNode;
   value: number | string;
   label: string;
   ring: string;
   iconBg: string;
-  sub?: React.ReactNode; // badge phụ (vd "2 quá hạn") màu đỏ
+  sub?: React.ReactNode; // badge phụ (vd "2 quá hạn" cảnh báo, hoặc "Đến viện 80%" chất lượng)
+  subTone?: "rose" | "emerald"; // rose = cảnh báo, emerald = chỉ số bổ sung tích cực
 }) {
+  const subCls =
+    subTone === "emerald"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+      : "bg-rose-50 text-rose-600 ring-rose-100";
+  const dotCls = subTone === "emerald" ? "bg-emerald-500" : "bg-rose-500";
   return (
     // text-center + mx-auto cho icon → icon/number/label cùng trục giữa.
     <div className="rounded-2xl bg-white p-4 text-center shadow-card">
@@ -49,8 +56,8 @@ function StatCard({
       <div className="mt-1 text-[13px] font-medium text-slate-500">{label}</div>
       {sub && (
         <div className="mt-2 flex justify-center">
-          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 ring-1 ring-rose-100">
-            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ring-1 ${subCls}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${dotCls}`} />
             {sub}
           </span>
         </div>
@@ -167,8 +174,10 @@ export default function Overview({
           icon={<CheckCircle2 size={20} className="text-emerald-600" />}
           iconBg="bg-emerald-100"
           value={`${data.conversionRate}%`}
-          label="Tỷ lệ chốt"
+          label="Tỷ lệ đặt lịch"
           ring="text-emerald-600"
+          sub={data.arrivalRate >= 0 ? `Đến viện ${data.arrivalRate}%` : undefined}
+          subTone="emerald"
         />
         <StatCard
           icon={<CalendarCheck size={20} className="text-sky-600" />}

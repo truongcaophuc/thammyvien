@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Phone, Search } from "lucide-react";
+import { Phone, Search, CalendarX, PhoneOutgoing, Flame } from "lucide-react";
 import type { Lead, LeadStatus } from "../data";
 import { Badge } from "../components/common";
 import { Skeleton } from "../components/Skeleton";
@@ -32,17 +32,22 @@ function badgeTone(l: Lead) {
   }
 }
 
+// Nhớ tab đang chọn qua điều hướng (module-level → sống suốt phiên, không mất khi mở lead rồi back).
+let rememberedFilter: FilterKey = "to_call";
+export function setListFilter(k: FilterKey) { rememberedFilter = k; }
+// Cache list qua điều hướng: back thì hiện ngay cache (không skeleton), refetch ngầm để cập nhật.
+let leadsCache: Lead[] | null = null;
+
 export default function CallList({
   onOpenLead,
-  initialFilter = "to_call",
 }: {
   onOpenLead: (l: Lead) => void;
-  initialFilter?: FilterKey;
 }) {
-  const [active, setActive] = useState<FilterKey>(initialFilter);
+  const [active, setActive] = useState<FilterKey>(rememberedFilter);
+  const selectFilter = (k: FilterKey) => { rememberedFilter = k; setActive(k); };
   const [searchQuery, setSearchQuery] = useState("");
-  const [allLeads, setAllLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [allLeads, setAllLeads] = useState<Lead[]>(leadsCache ?? []);
+  const [loading, setLoading] = useState(leadsCache === null);
   const [err, setErr] = useState<string | null>(null);
 
   // Refs cho scroll chip active vào viewport khi list dài hơn screen.
@@ -53,12 +58,13 @@ export default function CallList({
     let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
+        // Lần đầu (chưa cache) mới hiện skeleton; quay lại có cache → refetch ngầm, không nhấp nháy.
+        if (leadsCache === null) setLoading(true);
         setErr(null);
         const data = await fetchMyLeads();
-        if (!cancelled) setAllLeads(data);
+        if (!cancelled) { setAllLeads(data); leadsCache = data; }
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Không tải được danh sách");
+        if (!cancelled && leadsCache === null) setErr(e instanceof Error ? e.message : "Không tải được danh sách");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -138,7 +144,7 @@ export default function CallList({
                 <button
                   key={f.key}
                   ref={(el) => { chipRefs.current[f.key] = el; }}
-                  onClick={() => setActive(f.key)}
+                  onClick={() => selectFilter(f.key)}
                   className={`flex shrink-0 snap-center cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
                     on
                       ? "bg-brand-600 text-white shadow-soft"
@@ -198,10 +204,31 @@ export default function CallList({
                 <span className="truncate text-[15px] font-bold text-slate-800">{l.name}</span>
               </div>
               <div className="mt-0.5 text-[13px] font-medium text-slate-500">{l.phone}</div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge tone={badgeTone(l)}>{l.badge}</Badge>
+                {l.isHot && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-600">
+                    <Flame size={12} /> Quan tâm
+                  </span>
+                )}
+                {l.status === "callback" && l.callbackSource === "reception" && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                    <CalendarX size={12} /> Lễ tân trả về
+                  </span>
+                )}
+                {l.status === "callback" && l.callbackSource === "telesale" && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                    <PhoneOutgoing size={12} /> Tự hẹn gọi lại
+                  </span>
+                )}
                 <span className="truncate text-[12px] text-slate-400">{l.source}</span>
               </div>
+              {l.status === "callback" && l.callbackSource === "reception" && l.callbackReason && (
+                <div className="mt-1.5 flex items-start gap-1 text-[12px] text-amber-700/90">
+                  <span className="shrink-0 font-medium">Lý do hủy:</span>
+                  <span className="truncate">{l.callbackReason}</span>
+                </div>
+              )}
             </button>
             <a
               href={`tel:${l.phone.replace(/[^0-9+]/g, "")}`}

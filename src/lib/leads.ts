@@ -24,6 +24,9 @@ interface MyLeadsResponse {
     need: string | null; // nhu cầu từ intake (Prospect.AdditionalJsonData.source.need); null nếu lead không qua form
     status: ServerStatus;
     receivedAt: string; // ISO 8601
+    callbackSource: string; // "telesale" | "reception" | "" — nguồn của trạng thái Gọi lại
+    callbackReason: string; // lý do (chủ yếu khi reception hủy lịch trả về)
+    isHot: boolean; // cờ "Quan tâm / đang cân nhắc"
     history: ServerCallHistory[];
   }>;
 }
@@ -39,6 +42,9 @@ const MY_LEADS_QUERY = `
       need
       status
       receivedAt
+      callbackSource
+      callbackReason
+      isHot
       history {
         id
         calledAt
@@ -66,6 +72,9 @@ export async function fetchMyLeads(): Promise<Lead[]> {
       status,
       badge: badgeOf(status),
       subtitle: subtitleOf(status, received),
+      callbackSource: (l.callbackSource || "") as Lead["callbackSource"],
+      callbackReason: l.callbackReason || "",
+      isHot: !!l.isHot,
       history: l.history.map(mapCallHistory),
     };
   });
@@ -75,6 +84,17 @@ export async function fetchMyLeads(): Promise<Lead[]> {
 export async function fetchLeadById(id: string): Promise<Lead | null> {
   const leads = await fetchMyLeads();
   return leads.find((l) => l.id === id) ?? null;
+}
+
+// Bật/tắt cờ "Quan tâm / đang cân nhắc" (warm lead) cho 1 lead.
+const SET_HOT_MUTATION = `
+  mutation SetLeadHot($leadId: UUID!, $hot: Boolean!) {
+    setLeadHot(leadId: $leadId, hot: $hot)
+  }
+`;
+export async function setLeadHot(leadId: string, hot: boolean): Promise<boolean> {
+  const data = await gql<{ setLeadHot: boolean }>(SET_HOT_MUTATION, { leadId, hot });
+  return data.setLeadHot;
 }
 
 // Map raw ContactCall → display history. Tone visual theo result code:

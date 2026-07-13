@@ -17,10 +17,13 @@ import {
   CalendarX,
   PhoneForwarded,
   Ban,
+  Flame,
+  Plus,
 } from "lucide-react";
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
+import { setLeadHot } from "../lib/leads";
 import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
@@ -123,6 +126,13 @@ export default function LeadDetail({
   const [cancelReason, setCancelReason] = useState(""); // lý do hủy
   const [cancelErr, setCancelErr] = useState(false); // báo thiếu lý do (highlight ô)
   const [cancelling, setCancelling] = useState<CancelLeadOutcome | null>(null); // đang gọi mutation hủy (nút nào)
+  // Cờ "Quan tâm / đang cân nhắc" (warm lead) — optimistic toggle, rollback nếu lỗi.
+  const [hot, setHot] = useState(!!lead.isHot);
+  async function toggleHot() {
+    const next = !hot;
+    setHot(next);
+    try { await setLeadHot(lead.id, next); } catch { setHot(!next); }
+  }
 
   const showBooking = result === "BOOKED";
   const selDDMM = ddmm(selectedIso);
@@ -305,7 +315,20 @@ export default function LeadDetail({
       <div className="space-y-4 px-4 pt-4">
         {/* === SECTION 1: TÊN + SĐT — primary identity + call action === */}
         <div className="rounded-2xl2 bg-white p-5 shadow-card">
-          <h1 className="text-[22px] font-extrabold leading-tight text-slate-900">{lead.name}</h1>
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-[22px] font-extrabold leading-tight text-slate-900">{lead.name}</h1>
+            {/* Cờ "Quan tâm" — warm lead, tách khỏi trạng thái; bấm để bật/tắt */}
+            <button
+              onClick={toggleHot}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                hot
+                  ? "bg-orange-500 text-white shadow-soft"
+                  : "border border-slate-300 bg-white text-slate-500 hover:bg-slate-50"
+              }`}
+            >
+              {hot ? <Flame size={14} /> : <Plus size={14} />} Quan tâm
+            </button>
+          </div>
           {/* P3 — SĐT là plain text (không tap-to-call), chỉ button "Gọi ngay" mới gọi.
               Tránh ambiguous "tap chỗ nào để dial". */}
           <div className="mt-1 text-[17px] font-bold text-brand-600">{lead.phone}</div>

@@ -17,7 +17,6 @@ import {
   kbToc,
   kbPage,
   kbPageByTag,
-  parseKbListItems,
   cleanKbHtml,
   cleanSnippet,
   kbCache,
@@ -41,7 +40,7 @@ export default function KbSearch() {
   const [hits, setHits] = useState<KbHit[] | null>(null);
   const [resultTitle, setResultTitle] = useState("Kết quả");
   const [toc, setToc] = useState<KbTocShelf[] | null>(kbCache.toc);
-  const [pinned, setPinned] = useState<{ name: string; items: string[] } | null>(kbCache.pinned);
+  const [pinned, setPinned] = useState<{ name: string; html: string } | null>(kbCache.pinned);
 
   const [reader, setReader] = useState<{ name: string; html: string } | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
@@ -64,7 +63,7 @@ export default function KbSearch() {
       kbPageByTag(PINNED_KEY, PINNED_VALUE)
         .then((p) => {
           if (cancelled || !p || p.error || !p.html) return;
-          const v = { name: p.name || "Nguyên tắc tư vấn", items: parseKbListItems(p.html) };
+          const v = { name: p.name || "Nguyên tắc tư vấn", html: cleanKbHtml(p.html) };
           setPinned(v);
           kbCache.pinned = v;
         })
@@ -211,7 +210,7 @@ export default function KbSearch() {
       </div>
 
       {/* FAB Nguyên tắc tư vấn — canh theo khung app (max-w-md) */}
-      {pinned && pinned.items.length > 0 && (
+      {pinned && !!pinned.html && (
         <div className="pointer-events-none fixed inset-x-0 bottom-[96px] z-30 mx-auto flex max-w-md justify-end px-4">
           <button
             onClick={() => setPinnedOpen(true)}
@@ -235,14 +234,12 @@ export default function KbSearch() {
       {/* Sheet: Nguyên tắc */}
       {pinnedOpen && pinned && (
         <Sheet title={pinned.name} onClose={() => setPinnedOpen(false)} bg="#ffffff">
-          <div className="space-y-2 px-4 pb-4">
-            {pinned.items.map((html, i) => (
-              <div
-                key={i}
-                className="rounded-r-lg border-l-[3px] border-brand-500 bg-brand-50/60 px-3 py-2.5 text-[13.5px] leading-snug text-slate-700 [&_strong]:text-slate-900"
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
-            ))}
+          <div className="px-4 pb-4">
+            {/* Hiển thị NGUYÊN nội dung HTML từ BookStack (giữ h3/list/màu inline) — không thêm style card của app */}
+            <div
+              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+              dangerouslySetInnerHTML={{ __html: pinned.html }}
+            />
           </div>
         </Sheet>
       )}

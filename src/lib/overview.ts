@@ -17,7 +17,8 @@ export interface Overview {
   toCallCount: number;
   calledTodayCount: number;
   bookedTodayCount: number;
-  conversionRate: number;
+  conversionRate: number; // % đặt lịch / (đặt lịch + từ chối) — card "Tỷ lệ đặt lịch"
+  arrivalRate: number; // % khách tới nơi / lịch đã qua ngày hẹn; -1 = chưa có lịch tới hạn
   // Đổi từ callbackCount → overdueCount. "Quá hạn" = lead status=overdue.
   // Actionable hơn callback (Cần gọi đã bao gồm callback hôm nay).
   // TODO BE: rename field `callbackCount` → `overdueCount` trong resolver MyOverview.
@@ -39,6 +40,7 @@ const OVERVIEW_QUERY = `
       calledTodayCount
       bookedTodayCount
       conversionRate
+      arrivalRate
       overdueCount
       appointmentCount
       totalAssignedCount

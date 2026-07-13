@@ -11,7 +11,7 @@ import {
 } from "react-router-dom";
 import BottomNav from "./components/BottomNav";
 import Overview from "./screens/Overview";
-import CallList, { type FilterKey } from "./screens/CallList";
+import CallList, { setListFilter } from "./screens/CallList";
 import KbSearch from "./screens/KbSearch";
 import Profile from "./screens/Profile";
 import LeadDetail from "./screens/LeadDetail";
@@ -188,22 +188,19 @@ function OverviewRoute() {
       onStartCall={() => navigate("/list")}
       // "Xem tất cả lịch hẹn" → CallList với filter scheduled. State qua location
       // để CallList biết initial filter (replace default "to_call").
-      onSeeAllAppointments={() =>
-        navigate("/list", { state: { initialFilter: "scheduled" } })
-      }
+      onSeeAllAppointments={() => {
+        setListFilter("scheduled");
+        navigate("/list");
+      }}
     />
   );
 }
 
 function ListRoute() {
   const navigate = useNavigate();
-  const location = useLocation();
-  // Đọc initialFilter từ navigation state (nếu có) — cho phép Overview pre-select chip.
-  const initialFilter = (location.state as { initialFilter?: FilterKey } | null)?.initialFilter;
   return (
     <CallList
       onOpenLead={(l) => navigate(`/lead/${l.id}`, { state: { lead: l } })}
-      initialFilter={initialFilter}
     />
   );
 }

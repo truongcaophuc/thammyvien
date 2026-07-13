@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   MessageCircleMore, Lightbulb, Gem, CalendarCheck,
   Sparkles, Loader2,
@@ -15,6 +15,49 @@ const tints = [
   "bg-emerald-100 text-emerald-600",
   "bg-sky-100 text-sky-600",
 ];
+
+// Giá tiền / phần trăm / mốc thời gian — auto highlight để telesale liếc thấy ngay
+// con số quan trọng, kể cả khi AI chưa đánh dấu cụm từ khoá.
+const NUM_RE = /(\d[\d.,]*\s*(?:triệu|tr|nghìn|ngàn|k|đồng|đ|vn[đd]|%|giờ|phút|buổi|lần|ngày|tuần|tháng)\b)/gi;
+
+function highlightNumbers(text: string, keyPrefix: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let last = 0;
+  let i = 0;
+  for (const m of text.matchAll(NUM_RE)) {
+    const start = m.index ?? 0;
+    if (start > last) out.push(text.slice(last, start));
+    out.push(
+      <mark key={`${keyPrefix}-n${i++}`} className="rounded bg-amber-100 px-0.5 font-semibold text-amber-700">
+        {m[0]}
+      </mark>,
+    );
+    last = start + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+// Render lời thoại có highlight keyword:
+//  - **cụm**  → AI đánh dấu (tên dịch vụ / ưu đãi / câu chốt) → nền brand
+//  - số tiền / % / thời gian → auto nền amber
+function renderScriptBody(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  parts.forEach((part, idx) => {
+    const marked = /^\*\*([^*]+)\*\*$/.exec(part);
+    if (marked) {
+      nodes.push(
+        <mark key={`b${idx}`} className="rounded bg-brand-100 px-1 font-semibold text-brand-700">
+          {marked[1]}
+        </mark>,
+      );
+    } else if (part) {
+      nodes.push(...highlightNumbers(part, `t${idx}`));
+    }
+  });
+  return nodes;
+}
 
 export default function CallScriptSheet({
   lead,
@@ -123,7 +166,7 @@ export default function CallScriptSheet({
 
                   {open && (
                     <div className="px-3.5 pb-3.5">
-                      <p className="whitespace-pre-line text-[14px] leading-relaxed text-slate-600">{step.body}</p>
+                      <p className="whitespace-pre-line text-[14px] leading-relaxed text-slate-600">{renderScriptBody(step.body)}</p>
                     </div>
                   )}
                 </div>
