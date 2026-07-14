@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Phone, Search, CalendarX, PhoneOutgoing, Flame } from "lucide-react";
+import { Phone, Search, CalendarX, Flame } from "lucide-react";
 import type { Lead, LeadStatus } from "../data";
 import { Badge } from "../components/common";
 import { Skeleton } from "../components/Skeleton";
@@ -208,17 +208,12 @@ export default function CallList({
                 <Badge tone={badgeTone(l)}>{l.badge}</Badge>
                 {l.isHot && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-600">
-                    <Flame size={12} /> Quan tâm
+                    <Flame size={12} /> Cân nhắc
                   </span>
                 )}
                 {l.status === "callback" && l.callbackSource === "reception" && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
                     <CalendarX size={12} /> Lễ tân trả về
-                  </span>
-                )}
-                {l.status === "callback" && l.callbackSource === "telesale" && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                    <PhoneOutgoing size={12} /> Tự hẹn gọi lại
                   </span>
                 )}
                 <span className="truncate text-[12px] text-slate-400">{l.source}</span>

@@ -317,7 +317,7 @@ export default function LeadDetail({
         <div className="rounded-2xl2 bg-white p-5 shadow-card">
           <div className="flex items-start justify-between gap-3">
             <h1 className="text-[22px] font-extrabold leading-tight text-slate-900">{lead.name}</h1>
-            {/* Cờ "Quan tâm" — warm lead, tách khỏi trạng thái; bấm để bật/tắt */}
+            {/* Cờ "Cân nhắc" — warm lead, tách khỏi trạng thái; bấm để bật/tắt */}
             <button
               onClick={toggleHot}
               className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
@@ -326,7 +326,7 @@ export default function LeadDetail({
                   : "border border-slate-300 bg-white text-slate-500 hover:bg-slate-50"
               }`}
             >
-              {hot ? <Flame size={14} /> : <Plus size={14} />} Quan tâm
+              {hot ? <Flame size={14} /> : <Plus size={14} />} Cân nhắc
             </button>
           </div>
           {/* P3 — SĐT là plain text (không tap-to-call), chỉ button "Gọi ngay" mới gọi.
