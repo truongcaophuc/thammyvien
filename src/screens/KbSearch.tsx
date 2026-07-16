@@ -46,7 +46,6 @@ export default function KbSearch() {
   const [readerLoading, setReaderLoading] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [focusShelf, setFocusShelf] = useState<number | null>(null);
-  const [pinnedOpen, setPinnedOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +151,22 @@ export default function KbSearch() {
         </div>
       </div>
 
+      {/* Nguyên tắc tư vấn — render THẲNG trên trang (không cần bấm nút), chỉ ở chế độ browse */}
+      {pinned && !!pinned.html && mode === "browse" && (
+        <div className="px-4 pt-5">
+          <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-slate-400">
+            <Sparkles size={13} /> {pinned.name}
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-card">
+            {/* Giữ NGUYÊN HTML từ BookStack (h3/list/màu inline, details tự đóng mở) */}
+            <div
+              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+              dangerouslySetInnerHTML={{ __html: pinned.html }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Chủ đề phổ biến — danh sách xếp hạng (kiểu trending) */}
       {topTags.length > 0 && mode === "browse" && (
         <div className="px-4 pt-5">
@@ -209,37 +224,11 @@ export default function KbSearch() {
         )}
       </div>
 
-      {/* FAB Nguyên tắc tư vấn — canh theo khung app (max-w-md) */}
-      {pinned && !!pinned.html && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[96px] z-30 mx-auto flex max-w-md justify-end px-4">
-          <button
-            onClick={() => setPinnedOpen(true)}
-            aria-label="Nguyên tắc tư vấn"
-            className="pointer-events-auto flex h-12 cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-brand-600 to-brand-500 pl-4 pr-5 text-[13px] font-bold text-white shadow-soft transition-transform active:scale-95"
-          >
-            <Sparkles size={18} /> Nguyên tắc
-          </button>
-        </div>
-      )}
-
       {/* Sheet: Mục lục */}
       {tocOpen && (
         <Sheet title="Mục lục" onClose={() => setTocOpen(false)} bg="#ffffff">
           <div className="px-4 pb-4">
             <TocView toc={toc} focusShelf={focusShelf} onOpen={openPage} />
-          </div>
-        </Sheet>
-      )}
-
-      {/* Sheet: Nguyên tắc */}
-      {pinnedOpen && pinned && (
-        <Sheet title={pinned.name} onClose={() => setPinnedOpen(false)} bg="#ffffff">
-          <div className="px-4 pb-4">
-            {/* Hiển thị NGUYÊN nội dung HTML từ BookStack (giữ h3/list/màu inline) — không thêm style card của app */}
-            <div
-              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
-              dangerouslySetInnerHTML={{ __html: pinned.html }}
-            />
           </div>
         </Sheet>
       )}
