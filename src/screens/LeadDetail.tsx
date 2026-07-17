@@ -387,15 +387,16 @@ export default function LeadDetail({
 
         {/* Thông tin khách — hồ sơ đầy đủ (cơ bản + thuộc tính DynamicForm), đồng bộ với thẻ khách bên CEP */}
         {profile && (() => {
-          const rows: [string, string][] = [
+          const baseRows: [string, string][] = [
             ["Điện thoại", profile.phone],
             ["Điện thoại 2", profile.phone2],
             ["Ngày sinh", profile.dob],
             ["Email", profile.email],
             ["Địa chỉ", profile.address],
             ["Nghề nghiệp", profile.job],
-            ...profile.attributes.map((a) => [a.label, a.value] as [string, string]),
-          ].filter(([, v]) => !!v);
+          ];
+          const attrRows: [string, string][] = profile.attributes.map((a): [string, string] => [a.label, a.value]);
+          const rows = [...baseRows, ...attrRows].filter(([, v]) => !!v);
           if (!rows.length) return null;
           return (
             <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
