@@ -206,7 +206,7 @@ export default function CallList({
               <div className="mt-0.5 text-[13px] font-medium text-slate-500">{l.phone}</div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge tone={badgeTone(l)}>{l.badge}</Badge>
-                {l.isHot && (
+                {l.isInterested && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-600">
                     <Flame size={12} /> Cân nhắc
                   </span>

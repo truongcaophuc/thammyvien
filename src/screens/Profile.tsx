@@ -99,8 +99,8 @@ export default function Profile({ onLoggedOut }: { onLoggedOut?: () => void }) {
             <div className="text-[11.5px] font-medium text-slate-500">Lịch hẹn</div>
           </div>
           <div className="rounded-xl bg-amber-50 py-3">
-            <div className="text-[22px] font-extrabold text-amber-600">{data.monthlyConnectRatePct}%</div>
-            <div className="text-[11.5px] font-medium text-slate-500">Kết nối</div>
+            <div className="text-[22px] font-extrabold text-amber-600">{data.monthlyArrivedCount}</div>
+            <div className="text-[11.5px] font-medium text-slate-500">Khách đến</div>
           </div>
         </div>
       </div>

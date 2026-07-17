@@ -7,7 +7,7 @@ export interface Profile {
   userName: string;
   monthlyCallCount: number;
   monthlyAppointmentCount: number;
-  monthlyConnectRatePct: number;
+  monthlyArrivedCount: number;
   todayCalledCount: number;
   todayToCallCount: number;
 }
@@ -20,7 +20,7 @@ const PROFILE_QUERY = `
       userName
       monthlyCallCount
       monthlyAppointmentCount
-      monthlyConnectRatePct
+      monthlyArrivedCount
       todayCalledCount
       todayToCallCount
     }

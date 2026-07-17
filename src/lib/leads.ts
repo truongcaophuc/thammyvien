@@ -26,7 +26,7 @@ interface MyLeadsResponse {
     receivedAt: string; // ISO 8601
     callbackSource: string; // "telesale" | "reception" | "" — nguồn của trạng thái Gọi lại
     callbackReason: string; // lý do (chủ yếu khi reception hủy lịch trả về)
-    isHot: boolean; // cờ "Quan tâm / đang cân nhắc"
+    isInterested: boolean; // cờ "Quan tâm / đang cân nhắc" (BE: Prospect.IsInterested, đổi tên từ isHot)
     history: ServerCallHistory[];
   }>;
 }
@@ -44,7 +44,7 @@ const MY_LEADS_QUERY = `
       receivedAt
       callbackSource
       callbackReason
-      isHot
+      isInterested
       history {
         id
         calledAt
@@ -74,7 +74,7 @@ export async function fetchMyLeads(): Promise<Lead[]> {
       subtitle: subtitleOf(status, received),
       callbackSource: (l.callbackSource || "") as Lead["callbackSource"],
       callbackReason: l.callbackReason || "",
-      isHot: !!l.isHot,
+      isInterested: !!l.isInterested,
       history: l.history.map(mapCallHistory),
     };
   });
@@ -87,14 +87,14 @@ export async function fetchLeadById(id: string): Promise<Lead | null> {
 }
 
 // Bật/tắt cờ "Quan tâm / đang cân nhắc" (warm lead) cho 1 lead.
-const SET_HOT_MUTATION = `
-  mutation SetLeadHot($leadId: UUID!, $hot: Boolean!) {
-    setLeadHot(leadId: $leadId, hot: $hot)
+const SET_INTERESTED_MUTATION = `
+  mutation SetLeadInterested($leadId: UUID!, $interested: Boolean!) {
+    setLeadInterested(leadId: $leadId, interested: $interested)
   }
 `;
-export async function setLeadHot(leadId: string, hot: boolean): Promise<boolean> {
-  const data = await gql<{ setLeadHot: boolean }>(SET_HOT_MUTATION, { leadId, hot });
-  return data.setLeadHot;
+export async function setLeadInterested(leadId: string, interested: boolean): Promise<boolean> {
+  const data = await gql<{ setLeadInterested: boolean }>(SET_INTERESTED_MUTATION, { leadId, interested });
+  return data.setLeadInterested;
 }
 
 // Map raw ContactCall → display history. Tone visual theo result code:
@@ -192,4 +192,34 @@ function extractNeed(note: string): string {
   if (!note) return "";
   const firstSentence = note.split(/[.!?]/, 1)[0]?.trim();
   return firstSentence || note.slice(0, 60);
+}
+
+// ===== Hồ sơ ĐẦY ĐỦ của lead (card "Thông tin khách" trên LeadDetail) =====
+// Đồng bộ dữ liệu với modal thẻ khách bên CEP: thông tin cơ bản + thuộc tính DynamicForm.
+export interface LeadAttribute {
+  label: string;
+  value: string;
+}
+export interface LeadProfile {
+  phone: string;
+  phone2: string;
+  dob: string;      // dd/MM/yyyy (BE format sẵn)
+  email: string;
+  address: string;
+  job: string;
+  attributes: LeadAttribute[];
+}
+
+const LEAD_PROFILE_QUERY = `
+  query LeadProfile($id: UUID!) {
+    leadProfile(leadId: $id) {
+      phone phone2 dob email address job
+      attributes { label value }
+    }
+  }
+`;
+
+export async function fetchLeadProfile(leadId: string): Promise<LeadProfile | null> {
+  const data = await gql<{ leadProfile: LeadProfile | null }>(LEAD_PROFILE_QUERY, { id: leadId });
+  return data.leadProfile;
 }

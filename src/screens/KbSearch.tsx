@@ -6,7 +6,6 @@ import {
   Library,
   ChevronRight,
   FileText,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import Sheet from "../components/Sheet";
@@ -16,7 +15,6 @@ import {
   kbSearchTag,
   kbToc,
   kbPage,
-  kbPageByTag,
   cleanKbHtml,
   cleanSnippet,
   kbCache,
@@ -25,10 +23,6 @@ import {
   type KbTocShelf,
   type KbPage,
 } from "../lib/kb";
-
-// Tag định danh trang ghim "Nguyên tắc tư vấn" (khớp trang KB bên CEP).
-const PINNED_KEY = "type";
-const PINNED_VALUE = "retreat";
 
 const pretty = (s: string) => (s || "").replace(/-/g, " ");
 
@@ -40,7 +34,6 @@ export default function KbSearch() {
   const [hits, setHits] = useState<KbHit[] | null>(null);
   const [resultTitle, setResultTitle] = useState("Kết quả");
   const [toc, setToc] = useState<KbTocShelf[] | null>(kbCache.toc);
-  const [pinned, setPinned] = useState<{ name: string; html: string } | null>(kbCache.pinned);
 
   const [reader, setReader] = useState<{ name: string; html: string } | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
@@ -58,15 +51,6 @@ export default function KbSearch() {
       kbToc()
         .then((s) => { if (!cancelled) { setToc(s); kbCache.toc = s; } })
         .catch(() => !cancelled && setToc([]));
-    if (kbCache.pinned === null)
-      kbPageByTag(PINNED_KEY, PINNED_VALUE)
-        .then((p) => {
-          if (cancelled || !p || p.error || !p.html) return;
-          const v = { name: p.name || "Nguyên tắc tư vấn", html: cleanKbHtml(p.html) };
-          setPinned(v);
-          kbCache.pinned = v;
-        })
-        .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -151,21 +135,8 @@ export default function KbSearch() {
         </div>
       </div>
 
-      {/* Nguyên tắc tư vấn — render THẲNG trên trang (không cần bấm nút), chỉ ở chế độ browse */}
-      {pinned && !!pinned.html && mode === "browse" && (
-        <div className="px-4 pt-5">
-          <div className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-slate-400">
-            <Sparkles size={13} /> {pinned.name}
-          </div>
-          <div className="rounded-2xl bg-white p-4 shadow-card">
-            {/* Giữ NGUYÊN HTML từ BookStack (h3/list/màu inline, details tự đóng mở) */}
-            <div
-              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
-              dangerouslySetInnerHTML={{ __html: pinned.html }}
-            />
-          </div>
-        </div>
-      )}
+      {/* Nguyên tắc tư vấn KHÔNG hiển thị ở đây nữa (07/2026) —
+          đã chuyển thành popup BẮT BUỘC xem khi bấm "Gọi ngay" ở LeadDetail. */}
 
       {/* Chủ đề phổ biến — danh sách xếp hạng (kiểu trending) */}
       {topTags.length > 0 && mode === "browse" && (

@@ -157,3 +157,14 @@ export function parseKbListItems(html: string): string[] {
   const doc = new DOMParser().parseFromString(cleanKbHtml(html), "text/html");
   return Array.from(doc.querySelectorAll("li")).map((li) => li.innerHTML);
 }
+
+// Trang ghim "Nguyên tắc tư vấn" (tag type=retreat bên CEP KB) — dùng chung cho
+// tab Tra cứu KB (render inline) + popup bắt buộc xem trước khi bấm "Gọi ngay".
+export async function fetchKbPinned(): Promise<{ name: string; html: string } | null> {
+  if (kbCache.pinned) return kbCache.pinned;
+  const p = await kbPageByTag("type", "retreat");
+  if (!p || p.error || !p.html) return null;
+  const v = { name: p.name || "Nguyên tắc tư vấn", html: cleanKbHtml(p.html) };
+  kbCache.pinned = v;
+  return v;
+}

@@ -23,7 +23,9 @@ import {
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { setLeadHot } from "../lib/leads";
+import { setLeadInterested, fetchLeadProfile, type LeadProfile } from "../lib/leads";
+import { fetchKbPinned } from "../lib/kb";
+import Sheet from "../components/Sheet";
 import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
@@ -45,7 +47,7 @@ function localTodayIso(): string {
 // TODO: migrate sang BE — resultOptions từ CallResult table; bookingDays/timeSlots/branchName
 // từ chi nhánh + slot availability của user. Hiện hardcode để demo flow.
 const resultOptions: { key: ResultKey; label: string }[] = [
-  { key: "WRONG_NUMBER", label: "Không liên hệ được" },   // gộp: sai số / không nghe máy
+  { key: "WRONG_NUMBER", label: "Sai số/SĐT không tồn tại" },
   { key: "REJECTED", label: "Không quan tâm / từ chối" },
   { key: "CALLBACK", label: "Gọi lại sau" },
   { key: "BOOKED", label: "Đặt lịch hẹn thành công" },
@@ -126,12 +128,35 @@ export default function LeadDetail({
   const [cancelReason, setCancelReason] = useState(""); // lý do hủy
   const [cancelErr, setCancelErr] = useState(false); // báo thiếu lý do (highlight ô)
   const [cancelling, setCancelling] = useState<CancelLeadOutcome | null>(null); // đang gọi mutation hủy (nút nào)
+  // Hồ sơ đầy đủ (thông tin cơ bản + thuộc tính DynamicForm) — đồng bộ với modal thẻ khách CEP.
+  const [profile, setProfile] = useState<LeadProfile | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLeadProfile(lead.id).then((p) => { if (!cancelled) setProfile(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [lead.id]);
+
+  // Nguyên tắc tư vấn — BẮT BUỘC xem trước khi gọi: bấm "Gọi ngay" mở popup nguyên tắc,
+  // bấm "Tiếp tục gọi" mới dial. Prefetch để popup mở tức thì; KB lỗi thì không chặn cuộc gọi.
+  const [callRules, setCallRules] = useState<{ name: string; html: string } | null>(null);
+  const [showCallRules, setShowCallRules] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchKbPinned().then((v) => { if (!cancelled && v) setCallRules(v); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const telHref = `tel:${lead.phone.replace(/[^0-9+]/g, "")}`;
+  function handleCall() {
+    if (callRules?.html) { setShowCallRules(true); return; }
+    window.location.href = telHref; // không có nội dung nguyên tắc (KB lỗi) -> gọi thẳng, không chặn việc
+  }
+
   // Cờ "Quan tâm / đang cân nhắc" (warm lead) — optimistic toggle, rollback nếu lỗi.
-  const [hot, setHot] = useState(!!lead.isHot);
+  const [hot, setHot] = useState(!!lead.isInterested);
   async function toggleHot() {
     const next = !hot;
     setHot(next);
-    try { await setLeadHot(lead.id, next); } catch { setHot(!next); }
+    try { await setLeadInterested(lead.id, next); } catch { setHot(!next); }
   }
 
   const showBooking = result === "BOOKED";
@@ -334,12 +359,12 @@ export default function LeadDetail({
           <div className="mt-1 text-[17px] font-bold text-brand-600">{lead.phone}</div>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <a
-              href={`tel:${lead.phone.replace(/[^0-9+]/g, "")}`}
+            <button
+              onClick={handleCall}
               className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 py-3 text-[14.5px] font-bold text-white shadow-soft transition-transform active:scale-[0.98]"
             >
               <Phone size={18} /> Gọi ngay
-            </a>
+            </button>
             <button
               onClick={onScript}
               className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-50 py-3 text-[14.5px] font-bold text-brand-700 transition-colors hover:bg-brand-100"
@@ -359,6 +384,35 @@ export default function LeadDetail({
             <InfoRow icon={<Clock size={16} />} label="Nhận lúc" value={lead.receivedAt} />
           </div>
         </div>
+
+        {/* Thông tin khách — hồ sơ đầy đủ (cơ bản + thuộc tính DynamicForm), đồng bộ với thẻ khách bên CEP */}
+        {profile && (() => {
+          const rows: [string, string][] = [
+            ["Điện thoại", profile.phone],
+            ["Điện thoại 2", profile.phone2],
+            ["Ngày sinh", profile.dob],
+            ["Email", profile.email],
+            ["Địa chỉ", profile.address],
+            ["Nghề nghiệp", profile.job],
+            ...profile.attributes.map((a) => [a.label, a.value] as [string, string]),
+          ].filter(([, v]) => !!v);
+          if (!rows.length) return null;
+          return (
+            <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
+              <div className="border-b border-slate-100 py-3 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                Thông tin khách
+              </div>
+              <div className="divide-y divide-slate-100">
+                {rows.map(([k, v], i) => (
+                  <div key={`${k}-${i}`} className="flex items-start justify-between gap-3 py-2.5">
+                    <span className="shrink-0 pt-0.5 text-[12px] font-semibold uppercase tracking-wide text-slate-400">{k}</span>
+                    <span className="min-w-0 text-right text-[13.5px] leading-snug text-slate-700">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Lịch sử gọi */}
         <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
@@ -801,6 +855,33 @@ export default function LeadDetail({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Popup Nguyên tắc tư vấn — chặn trước khi gọi: đọc xong bấm "Tiếp tục gọi" mới dial */}
+      {showCallRules && callRules && (
+        <Sheet title={callRules.name} onClose={() => setShowCallRules(false)} bg="#ffffff">
+          <div className="px-4 pb-4">
+            <div
+              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+              dangerouslySetInnerHTML={{ __html: callRules.html }}
+            />
+            <div className="sticky bottom-0 mt-3 grid grid-cols-[1fr_2fr] gap-2 border-t border-slate-100 bg-white pb-1 pt-3">
+              <button
+                onClick={() => setShowCallRules(false)}
+                className="cursor-pointer rounded-xl bg-slate-100 py-3 text-[14px] font-semibold text-slate-600 hover:bg-slate-200"
+              >
+                Đóng
+              </button>
+              <a
+                href={telHref}
+                onClick={() => setShowCallRules(false)}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 py-3 text-[14.5px] font-bold text-white shadow-soft transition-transform active:scale-[0.98]"
+              >
+                <Phone size={18} /> Tiếp tục gọi
+              </a>
+            </div>
+          </div>
+        </Sheet>
       )}
     </div>
   );
