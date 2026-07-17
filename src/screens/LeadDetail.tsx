@@ -136,20 +136,24 @@ export default function LeadDetail({
     return () => { cancelled = true; };
   }, [lead.id]);
 
-  // Nguyên tắc tư vấn — BẮT BUỘC xem trước khi gọi: bấm "Gọi ngay" mở popup nguyên tắc,
-  // bấm "Tiếp tục gọi" mới dial. Prefetch để popup mở tức thì; KB lỗi thì không chặn cuộc gọi.
+  // Nguyên tắc tư vấn — BẮT BUỘC xem trước khi gọi: bấm "Gọi ngay" LUÔN mở popup;
+  // dial chỉ xảy ra khi bấm "Tiếp tục gọi" trong popup. Prefetch để popup có nội dung ngay.
+  // rulesReady = đã fetch xong (thành công hay lỗi) — để popup phân biệt "đang tải" vs "KB lỗi".
   const [callRules, setCallRules] = useState<{ name: string; html: string } | null>(null);
+  const [rulesReady, setRulesReady] = useState(false);
   const [showCallRules, setShowCallRules] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetchKbPinned().then((v) => { if (!cancelled && v) setCallRules(v); }).catch(() => {});
+    fetchKbPinned()
+      .then((v) => { if (!cancelled && v) setCallRules(v); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setRulesReady(true); });
     return () => { cancelled = true; };
   }, []);
   const telHref = `tel:${lead.phone.replace(/[^0-9+]/g, "")}`;
-  function handleCall() {
-    if (callRules?.html) { setShowCallRules(true); return; }
-    window.location.href = telHref; // không có nội dung nguyên tắc (KB lỗi) -> gọi thẳng, không chặn việc
-  }
+  // LUÔN mở popup (kể cả khi rules chưa tải xong / KB lỗi) — tuyệt đối không dial thẳng ở đây,
+  // tránh trình duyệt bật "Open app?" khi user bấm sớm lúc rules chưa kịp về (race condition).
+  function handleCall() { setShowCallRules(true); }
 
   // Cờ "Quan tâm / đang cân nhắc" (warm lead) — optimistic toggle, rollback nếu lỗi.
   const [hot, setHot] = useState(!!lead.isInterested);
@@ -858,14 +862,25 @@ export default function LeadDetail({
         </div>
       )}
 
-      {/* Popup Nguyên tắc tư vấn — chặn trước khi gọi: đọc xong bấm "Tiếp tục gọi" mới dial */}
-      {showCallRules && callRules && (
-        <Sheet title={callRules.name} onClose={() => setShowCallRules(false)} bg="#ffffff">
+      {/* Popup Nguyên tắc tư vấn — LUÔN mở khi bấm Gọi ngay; dial chỉ qua "Tiếp tục gọi".
+          3 trạng thái: đang tải (spinner) / có nội dung (HTML) / KB lỗi (fallback) — luôn cho gọi tiếp. */}
+      {showCallRules && (
+        <Sheet title={callRules?.name || "Nguyên tắc tư vấn"} onClose={() => setShowCallRules(false)} bg="#ffffff">
           <div className="px-4 pb-4">
-            <div
-              className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
-              dangerouslySetInnerHTML={{ __html: callRules.html }}
-            />
+            {callRules ? (
+              <div
+                className="text-[14px] leading-relaxed text-slate-700 [&_a]:text-brand-600 [&_h2]:mt-3 [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:mt-3 [&_h3]:text-[15px] [&_h3]:font-bold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_strong]:text-slate-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+                dangerouslySetInnerHTML={{ __html: callRules.html }}
+              />
+            ) : !rulesReady ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-slate-400">
+                <Loader2 size={18} className="animate-spin" /> Đang tải nguyên tắc…
+              </div>
+            ) : (
+              <div className="py-8 text-center text-[13px] text-slate-400">
+                Không tải được nội dung nguyên tắc. Vui lòng nhớ áp dụng nguyên tắc tư vấn khi gọi.
+              </div>
+            )}
             <div className="sticky bottom-0 mt-3 grid grid-cols-[1fr_2fr] gap-2 border-t border-slate-100 bg-white pb-1 pt-3">
               <button
                 onClick={() => setShowCallRules(false)}
@@ -873,13 +888,24 @@ export default function LeadDetail({
               >
                 Đóng
               </button>
-              <a
-                href={telHref}
-                onClick={() => setShowCallRules(false)}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 py-3 text-[14.5px] font-bold text-white shadow-soft transition-transform active:scale-[0.98]"
-              >
-                <Phone size={18} /> Tiếp tục gọi
-              </a>
+              {rulesReady ? (
+                // Đã tải xong (có nội dung hoặc KB lỗi) -> cho gọi
+                <a
+                  href={telHref}
+                  onClick={() => setShowCallRules(false)}
+                  className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 py-3 text-[14.5px] font-bold text-white shadow-soft transition-transform active:scale-[0.98]"
+                >
+                  <Phone size={18} /> Tiếp tục gọi
+                </a>
+              ) : (
+                // Đang tải nguyên tắc -> KHÓA nút gọi (buộc telesale chờ xem nguyên tắc)
+                <button
+                  disabled
+                  className="flex cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-300 py-3 text-[14.5px] font-bold text-white"
+                >
+                  <Loader2 size={17} className="animate-spin" /> Đang tải…
+                </button>
+              )}
             </div>
           </div>
         </Sheet>
