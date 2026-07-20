@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,11 +22,12 @@ import {
   Plus,
   Image as ImageIcon,
   X,
+  Trash2,
 } from "lucide-react";
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, type LeadProfile, type SkinPhoto } from "../lib/leads";
+import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, type LeadProfile, type SkinPhoto } from "../lib/leads";
 import { fetchKbPinned } from "../lib/kb";
 import Sheet from "../components/Sheet";
 import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
@@ -147,6 +148,42 @@ export default function LeadDetail({
     fetchLeadSkinPhotos(lead.id).then((ps) => { if (!cancelled) setPhotos(ps); }).catch(() => {});
     return () => { cancelled = true; };
   }, [lead.id]);
+  // Upload ảnh đính kèm — file picker (chọn ảnh / chụp) → POST → refetch.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [confirmDelIdx, setConfirmDelIdx] = useState<number | null>(null); // ảnh chờ xác nhận xóa
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = ""; // reset để chọn lại cùng file vẫn trigger
+    if (!files.length) return;
+    setUploading(true);
+    setUploadErr(null);
+    try {
+      await uploadLeadPhotos(lead.id, files);
+      setPhotos(await fetchLeadSkinPhotos(lead.id));
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : "Tải ảnh thất bại");
+    } finally {
+      setUploading(false);
+    }
+  };
+  const handleDeletePhoto = async (idx: number) => {
+    const ph = photos[idx];
+    if (!ph) return;
+    // Cập nhật ngay (optimistic) — không chờ refetch, tránh trường hợp UI không đổi khi refetch lỗi/chậm.
+    const next = photos.filter((_, i) => i !== idx);
+    setPhotos(next);
+    if (next.length === 0) setViewer(null);
+    else setViewer((v) => (v === null ? null : Math.min(v, next.length - 1)));
+    try {
+      await deleteLeadPhoto(ph.id);
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : "Xóa ảnh thất bại");
+      // Xóa thất bại → khôi phục lại danh sách từ server.
+      try { setPhotos(await fetchLeadSkinPhotos(lead.id)); } catch { /* ignore */ }
+    }
+  };
 
   // Nguyên tắc tư vấn — BẮT BUỘC xem trước khi gọi: bấm "Gọi ngay" LUÔN mở popup;
   // dial chỉ xảy ra khi bấm "Tiếp tục gọi" trong popup. Prefetch để popup có nội dung ngay.
@@ -431,14 +468,29 @@ export default function LeadDetail({
           );
         })()}
 
-        {/* Ảnh khách gửi — ảnh da khách đính kèm intake form (dbo.File.Data), lấy qua leadSkinPhotos */}
-        {photos.length > 0 && (
-          <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
-            <div className="flex items-center gap-2 border-b border-slate-100 py-3 text-[12px] font-bold uppercase tracking-wide text-slate-400">
-              <ImageIcon size={15} /> Ảnh đính kèm
-              <span className="ml-auto rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-600">{photos.length}</span>
-            </div>
-            {/* 1 hàng: lưới 3 ô; dư thì ô thứ 3 overlay "+N" → chạm mở lightbox lật tiếp */}
+        {/* Ảnh đính kèm — LUÔN hiển thị (kể cả chưa có ảnh); ảnh lấy qua leadSkinPhotos (dbo.File.Data) */}
+        <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
+          <div className="flex items-center gap-2 border-b border-slate-100 py-3 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+            <ImageIcon size={15} /> Ảnh đính kèm
+            {photos.length > 0 && (
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-600">{photos.length}</span>
+            )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="ml-auto flex cursor-pointer items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-[11.5px] font-bold normal-case text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-60"
+            >
+              {uploading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              {uploading ? "Đang tải…" : "Thêm ảnh"}
+            </button>
+          </div>
+          {uploadErr && <div className="pt-2 text-[12px] text-rose-500">{uploadErr}</div>}
+          {photos.length === 0 ? (
+            <div className="py-5 text-center text-[13px] text-slate-400">Chưa có ảnh đính kèm</div>
+          ) : (
+            /* 1 hàng: lưới 3 ô; dư thì ô thứ 3 overlay "+N" → chạm mở lightbox lật tiếp */
             <div className="grid grid-cols-3 gap-2 py-3">
               {(photos.length > 3 ? photos.slice(0, 3) : photos).map((ph, i) => {
                 const isMore = photos.length > 3 && i === 2;
@@ -459,8 +511,8 @@ export default function LeadDetail({
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Lịch sử gọi */}
         <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
@@ -965,13 +1017,23 @@ export default function LeadDetail({
           >
             <div className="flex items-center justify-between px-4 py-3 text-white">
               <span className="text-[13px] font-semibold">{idx + 1}/{photos.length}</span>
-              <button
-                type="button"
-                onClick={() => setViewer(null)}
-                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white/10 active:bg-white/20"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelIdx(idx); }}
+                  title="Xóa ảnh"
+                  className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white/10 text-rose-300 active:bg-white/20"
+                >
+                  <Trash2 size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewer(null)}
+                  className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
             <div className="relative flex flex-1 items-center justify-center overflow-hidden px-2 pb-6">
               <img
@@ -1002,6 +1064,35 @@ export default function LeadDetail({
           </div>
         );
       })()}
+
+      {/* Xác nhận xóa ảnh (thay window.confirm) — z cao hơn lightbox */}
+      {confirmDelIdx !== null && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-6"
+          onClick={() => setConfirmDelIdx(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[16px] font-bold text-slate-900">Xóa ảnh này?</div>
+            <div className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
+              Ảnh sẽ được gỡ khỏi hồ sơ khách. Bạn chắc chắn?
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setConfirmDelIdx(null)}
+                className="flex-1 cursor-pointer rounded-xl border-2 border-slate-200 py-2.5 text-[14px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => { const i = confirmDelIdx; setConfirmDelIdx(null); if (i !== null) handleDeletePhoto(i); }}
+                className="flex-1 cursor-pointer rounded-xl bg-rose-500 py-2.5 text-[14px] font-bold text-white shadow-soft active:scale-[0.98]"
+              >
+                Xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

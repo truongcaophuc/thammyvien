@@ -87,18 +87,20 @@ export default function CallList({
   }, [allLeads]);
 
   const list = useMemo(() => {
-    const f = filters.find((x) => x.key === active)!;
-    const byStatus = allLeads.filter((l) => f.match.includes(l.status));
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return byStatus;
-    // Strip non-digit/non-+ trong query để match phone format có space/dash.
-    const qPhone = q.replace(/[^0-9+]/g, "");
-    return byStatus.filter((l) => {
-      const nameMatch = l.name.toLowerCase().includes(q);
-      const phoneMatch = qPhone.length > 0
-        && l.phone.replace(/[^0-9+]/g, "").includes(qPhone);
-      return nameMatch || phoneMatch;
-    });
+    // CÓ từ khoá → tìm trên TẤT CẢ lead (mọi trạng thái, bỏ qua tab).
+    // KHÔNG có từ khoá → lọc theo tab đang chọn.
+    if (q) {
+      const qPhone = q.replace(/[^0-9+]/g, ""); // strip non-digit để match phone có space/dash
+      return allLeads.filter((l) => {
+        const nameMatch = l.name.toLowerCase().includes(q);
+        const phoneMatch = qPhone.length > 0
+          && l.phone.replace(/[^0-9+]/g, "").includes(qPhone);
+        return nameMatch || phoneMatch;
+      });
+    }
+    const f = filters.find((x) => x.key === active)!;
+    return allLeads.filter((l) => f.match.includes(l.status));
   }, [active, allLeads, searchQuery]);
 
   return (
@@ -236,7 +238,7 @@ export default function CallList({
         ))}
         {!loading && !err && list.length === 0 && (
           <div className="rounded-2xl bg-white p-8 text-center text-[13px] text-slate-400 shadow-card">
-            Không có lead trong nhóm này
+            {searchQuery.trim() ? "Không tìm thấy lead nào" : "Không có lead trong nhóm này"}
           </div>
         )}
       </div>

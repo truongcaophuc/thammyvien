@@ -2,6 +2,7 @@
 // BE trả raw data (status enum UPPERCASE + ISO date + history).
 // FE format badge/subtitle/receivedAt/history time sang tiếng Việt.
 import { gql } from "./graphql";
+import { API_BASE_URL } from "./config";
 import type { CallHistory, Lead, LeadStatus } from "../data";
 
 type ServerStatus = "NEW" | "OVERDUE" | "CALLBACK" | "SCHEDULED" | "CLOSED";
@@ -244,4 +245,36 @@ const LEAD_SKIN_PHOTOS_QUERY = `
 export async function fetchLeadSkinPhotos(leadId: string): Promise<SkinPhoto[]> {
   const data = await gql<{ leadSkinPhotos: SkinPhoto[] }>(LEAD_SKIN_PHOTOS_QUERY, { id: leadId });
   return data.leadSkinPhotos ?? [];
+}
+
+// Upload ảnh đính kèm cho lead (multipart). BE gắn vào prospect của lead do agent hiện tại phụ trách.
+// Trả về số ảnh đã lưu. Dùng fetch trực tiếp (FormData — không set Content-Type để browser tự thêm boundary).
+export async function uploadLeadPhotos(leadId: string, files: File[]): Promise<number> {
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  const res = await fetch(`${API_BASE_URL}/api/lead-photo/upload?leadId=${encodeURIComponent(leadId)}`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!res.ok) {
+    let msg = "Tải ảnh thất bại";
+    try { msg = (await res.json())?.message || msg; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  const data = (await res.json()) as { file_ids?: string[] };
+  return data.file_ids?.length ?? 0;
+}
+
+// Xóa (mềm) 1 ảnh đính kèm. BE chỉ cho xóa ảnh của lead do agent hiện tại phụ trách.
+export async function deleteLeadPhoto(fileId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/lead-photo/delete?fileId=${encodeURIComponent(fileId)}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let msg = "Xóa ảnh thất bại";
+    try { msg = (await res.json())?.message || msg; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
 }
