@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronLeft,
+  ChevronRight,
   Phone,
   FileText,
   Target,
@@ -19,11 +20,13 @@ import {
   Ban,
   Flame,
   Plus,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult } from "../lib/callResult";
-import { setLeadInterested, fetchLeadProfile, type LeadProfile } from "../lib/leads";
+import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, type LeadProfile, type SkinPhoto } from "../lib/leads";
 import { fetchKbPinned } from "../lib/kb";
 import Sheet from "../components/Sheet";
 import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
@@ -133,6 +136,15 @@ export default function LeadDetail({
   useEffect(() => {
     let cancelled = false;
     fetchLeadProfile(lead.id).then((p) => { if (!cancelled) setProfile(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [lead.id]);
+
+  // Ảnh da khách gửi kèm intake form (card "Ảnh khách gửi"). viewer = index ảnh đang phóng to (null = đóng).
+  const [photos, setPhotos] = useState<SkinPhoto[]>([]);
+  const [viewer, setViewer] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLeadSkinPhotos(lead.id).then((ps) => { if (!cancelled) setPhotos(ps); }).catch(() => {});
     return () => { cancelled = true; };
   }, [lead.id]);
 
@@ -418,6 +430,37 @@ export default function LeadDetail({
             </div>
           );
         })()}
+
+        {/* Ảnh khách gửi — ảnh da khách đính kèm intake form (dbo.File.Data), lấy qua leadSkinPhotos */}
+        {photos.length > 0 && (
+          <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
+            <div className="flex items-center gap-2 border-b border-slate-100 py-3 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+              <ImageIcon size={15} /> Ảnh đính kèm
+              <span className="ml-auto rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-600">{photos.length}</span>
+            </div>
+            {/* 1 hàng: lưới 3 ô; dư thì ô thứ 3 overlay "+N" → chạm mở lightbox lật tiếp */}
+            <div className="grid grid-cols-3 gap-2 py-3">
+              {(photos.length > 3 ? photos.slice(0, 3) : photos).map((ph, i) => {
+                const isMore = photos.length > 3 && i === 2;
+                return (
+                  <button
+                    key={ph.id}
+                    type="button"
+                    onClick={() => setViewer(i)}
+                    className="relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-100 ring-1 ring-slate-200/70 transition-transform active:scale-95"
+                  >
+                    <img src={ph.dataUri} alt={ph.fileName || "Ảnh khách"} loading="lazy" className="h-full w-full object-cover" />
+                    {isMore && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-[18px] font-bold text-white">
+                        +{photos.length - 3}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Lịch sử gọi */}
         <div className="rounded-2xl2 bg-white px-4 py-1 shadow-card">
@@ -910,6 +953,55 @@ export default function LeadDetail({
           </div>
         </Sheet>
       )}
+
+      {/* Lightbox xem ảnh phóng to — chạm nền đen để đóng, nút ‹ › lật ảnh */}
+      {viewer !== null && photos[viewer] && (() => {
+        const idx = viewer; // đã narrow thành number
+        const go = (d: number) => setViewer((idx + d + photos.length) % photos.length);
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex flex-col bg-black/90"
+            onClick={() => setViewer(null)}
+          >
+            <div className="flex items-center justify-between px-4 py-3 text-white">
+              <span className="text-[13px] font-semibold">{idx + 1}/{photos.length}</span>
+              <button
+                type="button"
+                onClick={() => setViewer(null)}
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-white/10 active:bg-white/20"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden px-2 pb-6">
+              <img
+                src={photos[idx].dataUri}
+                alt={photos[idx].fileName || "Ảnh khách"}
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-full max-w-full object-contain"
+              />
+              {photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); go(-1); }}
+                    className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white active:bg-white/25"
+                  >
+                    <ChevronLeft size={24} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); go(1); }}
+                    className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/10 text-white active:bg-white/25"
+                  >
+                    <ChevronRight size={24} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

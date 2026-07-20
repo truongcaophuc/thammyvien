@@ -223,3 +223,25 @@ export async function fetchLeadProfile(leadId: string): Promise<LeadProfile | nu
   const data = await gql<{ leadProfile: LeadProfile | null }>(LEAD_PROFILE_QUERY, { id: leadId });
   return data.leadProfile;
 }
+
+// ===== Ảnh da khách gửi kèm intake form (card "Ảnh khách gửi" trên LeadDetail) =====
+// dataUri = data:image/...;base64,... → gán thẳng vào <img src>. BE chỉ trả ảnh của lead
+// đang do agent hiện tại phụ trách (bảo mật server-side).
+export interface SkinPhoto {
+  id: string;
+  fileName: string;
+  dataUri: string;
+}
+
+const LEAD_SKIN_PHOTOS_QUERY = `
+  query LeadSkinPhotos($id: UUID!) {
+    leadSkinPhotos(leadId: $id) {
+      id fileName dataUri
+    }
+  }
+`;
+
+export async function fetchLeadSkinPhotos(leadId: string): Promise<SkinPhoto[]> {
+  const data = await gql<{ leadSkinPhotos: SkinPhoto[] }>(LEAD_SKIN_PHOTOS_QUERY, { id: leadId });
+  return data.leadSkinPhotos ?? [];
+}
