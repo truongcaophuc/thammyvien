@@ -1,0 +1,272 @@
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Search, SlidersHorizontal, X, AlertTriangle } from "lucide-react";
+import { fetchCarePatients } from "../../lib/cskh";
+import type { Patient } from "../../lib/dtv";
+
+function fmtDate(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Avatar: 2 chữ cái + màu hash cố định (đồng bộ danh sách ĐTV + overview).
+function initials(name: string): string {
+  const p = (name || "").trim().split(/\s+/).filter((w) => w && !/^\d/.test(w));
+  if (!p.length) return "?";
+  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+}
+const AVA_COLORS = ["#7c3aed", "#6366f1", "#0ea5e9", "#10b981", "#14b8a6", "#f59e0b", "#fb923c", "#ec4899", "#8b5cf6", "#ef4444"];
+function colorOf(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVA_COLORS[h % AVA_COLORS.length];
+}
+
+export default function CskhList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
+  const [patients, setPatients] = useState<Patient[] | null>(null);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [careFilter, setCareFilter] = useState<string | null>(null);
+  // Chiều phụ (lọc qua bottom-sheet "Bộ lọc") — hiện có satisfaction, chừa chỗ thêm về sau.
+  const [satisFilter, setSatisFilter] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Chip filter theo tình trạng chăm sóc — đếm từ list đã tải (thứ tự theo mức churn).
+  const careChips = useMemo(() => {
+    const ORDER = ["Đang kết nối", "Ít kết nối", "Không kết nối", "Bỏ liệu trình", "Ngừng chăm", "Kích ứng / Sự cố"];
+    const m = new Map<string, { count: number; color: string }>();
+    (patients ?? []).forEach((p) => {
+      if (!p.careStatus) return;
+      const e = m.get(p.careStatus) || { count: 0, color: p.careStatusColor || "#94a3b8" };
+      e.count++;
+      m.set(p.careStatus, e);
+    });
+    return [...m.entries()]
+      .sort((a, b) => (ORDER.indexOf(a[0]) < 0 ? 99 : ORDER.indexOf(a[0])) - (ORDER.indexOf(b[0]) < 0 ? 99 : ORDER.indexOf(b[0])))
+      .map(([label, e]) => ({ label, ...e }));
+  }, [patients]);
+
+  // Tùy chọn "Mức hài lòng" cho sheet — đếm từ list (thứ tự tốt→xấu).
+  const satisOpts = useMemo(() => {
+    const ORDER = ["Hài lòng", "Chưa hài lòng kết quả", "Complain"];
+    const m = new Map<string, { count: number; color: string }>();
+    (patients ?? []).forEach((p) => {
+      if (!p.satisfaction) return;
+      const e = m.get(p.satisfaction) || { count: 0, color: p.satisfactionColor || "#94a3b8" };
+      e.count++;
+      m.set(p.satisfaction, e);
+    });
+    return [...m.entries()]
+      .sort((a, b) => (ORDER.indexOf(a[0]) < 0 ? 99 : ORDER.indexOf(a[0])) - (ORDER.indexOf(b[0]) < 0 ? 99 : ORDER.indexOf(b[0])))
+      .map(([label, e]) => ({ label, ...e }));
+  }, [patients]);
+
+  const secondaryCount = satisFilter ? 1 : 0; // số filter phụ đang bật (cho badge)
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchCarePatients()
+      .then((ps) => { if (!cancelled) setPatients(ps); })
+      .catch(() => { if (!cancelled) setPatients([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    // Live: push đến (SW) / app hiện lại -> refetch tại chỗ (không spinner, giữ ô tìm kiếm).
+    const refresh = () => fetchCarePatients().then((ps) => { if (!cancelled) setPatients(ps); }).catch(() => {});
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("sw-push", refresh);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("sw-push", refresh);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  const filtered = (patients ?? [])
+    .filter((p) => {
+      if (careFilter && p.careStatus !== careFilter) return false;
+      if (satisFilter && p.satisfaction !== satisFilter) return false;
+      const hay = (p.name + " " + p.phone + " " + p.service).toLowerCase();
+      return !q.trim() || hay.includes(q.trim().toLowerCase());
+    })
+    // CV-21: khách Kích ứng/Sự cố lên đầu để xử lý ASAP.
+    .sort((a, b) => (b.careIncident ? 1 : 0) - (a.careIncident ? 1 : 0));
+
+  return (
+    <div className="min-h-full bg-[#eef0f5]">
+      <header className="sticky top-0 z-10 bg-white px-4 pb-3 pt-4 shadow-sm">
+        <h1 className="text-lg font-bold text-slate-800">Đặt lịch điều trị</h1>
+        <p className="mt-0.5 text-[12.5px] text-slate-400">Chọn khách · chọn chi nhánh · chọn ngày/giờ</p>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
+            <Search size={16} className="text-slate-400" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Tìm tên / SĐT / liệu trình…"
+              className="min-w-0 flex-1 bg-transparent py-2.5 text-[14px] outline-none placeholder:text-slate-400"
+            />
+          </div>
+          <button
+            onClick={() => setSheetOpen(true)}
+            aria-label="Bộ lọc"
+            className={`relative flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2.5 text-[13px] font-semibold transition ${
+              secondaryCount > 0 ? "border-violet-200 bg-violet-50 text-violet-700" : "border-slate-200 bg-slate-50 text-slate-500"
+            }`}
+          >
+            <SlidersHorizontal size={16} />
+            Lọc
+            {secondaryCount > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+                {secondaryCount}
+              </span>
+            )}
+          </button>
+        </div>
+        {careChips.length > 0 && (
+          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5" style={{ scrollbarWidth: "none" }}>
+            <button
+              onClick={(e) => { setCareFilter(null); e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); }}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${!careFilter ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500"}`}
+            >
+              Tất cả <span className="opacity-70">{(patients ?? []).length}</span>
+            </button>
+            {careChips.map((c) => {
+              const on = careFilter === c.label;
+              return (
+                <button
+                  key={c.label}
+                  onClick={(e) => { setCareFilter(on ? null : c.label); e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition"
+                  style={on ? { background: c.color, color: "#fff" } : { background: `${c.color}1a`, color: c.color }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c.color }} />
+                  {c.label} <span className="opacity-80">{c.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </header>
+
+      <div className="space-y-2.5 p-4">
+        {patients === null || loading ? (
+          <div className="flex justify-center py-16 text-slate-400"><Loader2 size={26} className="animate-spin" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center text-[13.5px] text-slate-400">Không có khách phù hợp.</div>
+        ) : (
+          filtered.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onOpenPatient(p)}
+              className={`relative flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left shadow-sm transition-shadow hover:shadow-md ${
+                p.careIncident ? "border-red-300 bg-red-50/70 ring-1 ring-red-200" : "border-slate-100 bg-white"
+              }`}
+            >
+              <span
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[15px] font-bold text-white"
+                style={{ background: colorOf(p.name) }}
+              >
+                {initials(p.name)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  {p.careIncident && <AlertTriangle size={14} className="shrink-0 text-red-500" />}
+                  <div className="truncate text-[15px] font-bold text-slate-800">{p.name}</div>
+                </div>
+                <div className="mt-0.5 truncate text-[12.5px] text-slate-500">{p.service}</div>
+                <div className="mt-1.5 flex items-center justify-between text-[12px] text-slate-400">
+                  <span className="font-semibold text-slate-500">Buổi {p.sessionDone}/{p.sessionTotal}</span>
+                  <span>Gần nhất: {fmtDate(p.lastCareAt)}</span>
+                </div>
+              </div>
+              {(p.careStatus || p.satisfaction) && (
+                <div className="absolute right-3 top-2.5 flex flex-col items-end gap-1">
+                  {p.careStatus && (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                      style={{ background: `${p.careStatusColor || "#94a3b8"}1a`, color: p.careStatusColor || "#64748b" }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.careStatusColor || "#94a3b8" }} />
+                      {p.careStatus}
+                    </span>
+                  )}
+                  {p.satisfaction && (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                      style={{ background: `${p.satisfactionColor || "#94a3b8"}1a`, color: p.satisfactionColor || "#64748b" }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.satisfactionColor || "#94a3b8" }} />
+                      {p.satisfaction}
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Bottom sheet "Bộ lọc" — chiều phụ (satisfaction; chừa chỗ thêm chiều khác) */}
+      <div className={`fixed inset-0 z-30 ${sheetOpen ? "" : "pointer-events-none"}`} aria-hidden={!sheetOpen}>
+        <div
+          onClick={() => setSheetOpen(false)}
+          className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${sheetOpen ? "opacity-100" : "opacity-0"}`}
+        />
+        <div
+          className={`absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-2xl bg-white shadow-2xl transition-transform duration-300 ${sheetOpen ? "translate-y-0" : "translate-y-full"}`}
+        >
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <div className="text-[15px] font-bold text-slate-800">Bộ lọc</div>
+            <button onClick={() => setSheetOpen(false)} aria-label="Đóng" className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="max-h-[60vh] overflow-y-auto px-4 py-4">
+            <div>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Mức hài lòng</div>
+              {satisOpts.length === 0 ? (
+                <div className="text-[13px] text-slate-400">Chưa có khách nào được gắn mức hài lòng.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {satisOpts.map((o) => {
+                    const on = satisFilter === o.label;
+                    return (
+                      <button
+                        key={o.label}
+                        onClick={() => setSatisFilter(on ? null : o.label)}
+                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition active:scale-95"
+                        style={on ? { background: o.color, color: "#fff" } : { background: `${o.color}1a`, color: o.color }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : o.color }} />
+                        {o.label} <span className="opacity-80">{o.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          <div
+            className="flex gap-2 border-t border-slate-100 px-4 py-3"
+            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
+            <button
+              onClick={() => setSatisFilter(null)}
+              disabled={secondaryCount === 0}
+              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-[14px] font-semibold text-slate-600 transition disabled:opacity-40"
+            >
+              Xóa lọc
+            </button>
+            <button onClick={() => setSheetOpen(false)} className="flex-1 rounded-xl bg-violet-600 py-2.5 text-[14px] font-bold text-white transition active:scale-[0.98]">
+              Xong
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

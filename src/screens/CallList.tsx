@@ -15,6 +15,19 @@ const filters: { key: FilterKey; label: string; match: LeadStatus[] }[] = [
   { key: "closed", label: "Đã đóng", match: ["closed"] },
 ];
 
+// Avatar khách: 2 chữ cái đầu/cuối + màu hash cố định (đồng bộ thẻ khách CEP + DTV).
+function initials(name: string): string {
+  const p = (name || "").trim().split(/\s+/).filter((w) => w && !/^\d/.test(w));
+  if (!p.length) return "?";
+  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+}
+const AVA_COLORS = ["#7c3aed", "#6366f1", "#0ea5e9", "#10b981", "#14b8a6", "#f59e0b", "#fb923c", "#ec4899", "#8b5cf6", "#ef4444"];
+function avatarColor(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVA_COLORS[h % AVA_COLORS.length];
+}
+
 function badgeTone(l: Lead) {
   switch (l.status) {
     case "overdue":
@@ -198,6 +211,12 @@ export default function CallList({
             key={l.id}
             className="flex w-full items-center gap-3 rounded-2xl bg-white p-3.5 shadow-card transition-shadow hover:shadow-soft"
           >
+            <span
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[15px] font-bold text-white"
+              style={{ background: avatarColor(l.name) }}
+            >
+              {initials(l.name)}
+            </span>
             <button
               onClick={() => onOpenLead(l)}
               className="min-w-0 flex-1 cursor-pointer text-left"

@@ -106,6 +106,7 @@ export default defineConfig({
         target: CEP_BACKEND,
         changeOrigin: true,
         secure: false,
+        ws: true, // proxy WebSocket cho GraphQL subscription (live-update)
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes) => {
             const stripped = stripSecureCookie(proxyRes.headers['set-cookie'])

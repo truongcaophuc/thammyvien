@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, CalendarClock, LayoutGrid } from "lucide-react";
 import {
   Navigate,
   Outlet,
@@ -9,62 +9,95 @@ import {
   useNavigate,
   useParams,
 } from "react-router-dom";
-import BottomNav from "./components/BottomNav";
+import BottomNav, { type NavItem } from "./components/BottomNav";
 import Overview from "./screens/Overview";
 import CallList, { setListFilter } from "./screens/CallList";
 import KbSearch from "./screens/KbSearch";
 import Profile from "./screens/Profile";
 import LeadDetail from "./screens/LeadDetail";
 import Login from "./screens/Login";
+import DtvList from "./screens/dtv/DtvList";
+import DtvOverviewScreen from "./screens/dtv/DtvOverview";
+import DtvPatientDetail from "./screens/dtv/DtvPatientDetail";
+import CskhList from "./screens/cskh/CskhList";
+import CskhOverviewScreen from "./screens/cskh/CskhOverview";
+import CskhBook from "./screens/cskh/CskhBook";
 import CallScriptSheet from "./modals/CallScriptSheet";
 import type { Lead } from "./data";
-import { checkSession, type AgentProfile } from "./lib/auth";
+import { checkSession, type AgentProfile, type WorkspaceRole } from "./lib/auth";
 import { fetchLeadById } from "./lib/leads";
+import { fetchPatientById, type Patient } from "./lib/dtv";
+import { fetchCarePatientById } from "./lib/cskh";
+import { subscribeNotify } from "./lib/gqlSubscribe";
 import { resyncPush } from "./lib/pushNotification";
 
 type AuthState = "checking" | "guest" | "authed";
 
-// ============================================================================
-// AuthContext-lite — đơn giản hoá: pass auth state qua App component.
-// Nâng cấp lên React Context khi nhiều màn cần.
-// ============================================================================
+// Nav của workspace ĐTV (Điều trị viên).
+const DTV_NAV: NavItem[] = [
+  { to: "/dtv/overview", label: "Tổng quan", icon: LayoutGrid },
+  { to: "/dtv", label: "Khách ĐT", icon: Stethoscope },
+  { to: "/dtv/kb", label: "Tra cứu", icon: BookOpen },
+  { to: "/dtv/profile", label: "Cá nhân", icon: UserIcon },
+];
+
+const CSKH_NAV: NavItem[] = [
+  { to: "/cskh/overview", label: "Tổng quan", icon: LayoutGrid },
+  { to: "/cskh", label: "Đặt lịch", icon: CalendarClock },
+  { to: "/cskh/kb", label: "Tra cứu", icon: BookOpen },
+  { to: "/cskh/profile", label: "Cá nhân", icon: UserIcon },
+];
+
 export default function App() {
+  const navigate = useNavigate();
   const [authState, setAuthState] = useState<AuthState>("checking");
-  const [, setProfile] = useState<AgentProfile | null>(null);
+  const [profile, setProfile] = useState<AgentProfile | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Verify session khi mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const user = await checkSession();
         if (cancelled) return;
-        if (user) {
-          setProfile(user);
-          setAuthState("authed");
-        } else {
-          setAuthState("guest");
-        }
+        if (user) { setProfile(user); setAuthState("authed"); }
+        else setAuthState("guest");
       } catch {
         if (!cancelled) setAuthState("guest");
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Self-heal push: khi đã đăng nhập, đồng bộ lại subscription hiện tại lên server
-  // (endpoint có thể đã xoay/chết khi app đóng) → không cần user tắt/bật thủ công.
   useEffect(() => {
     if (authState === "authed") void resyncPush();
   }, [authState]);
+
+  // Live-update qua GraphQL subscription (WebSocket): user nhận tín hiệu "có thông báo mới"
+  // -> bắn 'sw-push' để màn Tổng quan/List refetch ngay (không lệ thuộc web push / quyền thông báo).
+  useEffect(() => {
+    if (authState !== "authed" || !profile?.Id) return;
+    return subscribeNotify(profile.Id, () => window.dispatchEvent(new CustomEvent("sw-push")));
+  }, [authState, profile?.Id]);
+
+  // Bấm notification (web push) -> điều hướng tới deep-link (service worker gửi 'navigate').
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { type?: string; url?: string } | undefined;
+      if (d?.type === "navigate" && d.url) navigate(d.url);
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, [navigate]);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2600);
   };
+
+  const role: WorkspaceRole = profile?.Role === "cskh" ? "cskh" : profile?.Role === "dtv" ? "dtv" : "telesale";
+  const homePath = role === "dtv" ? "/dtv/overview" : role === "cskh" ? "/cskh/overview" : "/overview";
 
   if (authState === "checking") {
     return (
@@ -83,42 +116,39 @@ export default function App() {
             authState === "authed" ? (
               <Navigate to="/" replace />
             ) : (
-              <Login
-                onLoggedIn={(u) => {
-                  setProfile(u);
-                  setAuthState("authed");
-                }}
-              />
+              <Login onLoggedIn={(u) => { setProfile(u); setAuthState("authed"); }} />
             )
           }
         />
 
-        {/* Protected routes — share AppLayout (BottomNav) */}
+        {/* Root → điều hướng theo role */}
+        <Route
+          index
+          element={
+            authState === "authed" ? <Navigate to={homePath} replace /> : <Navigate to="/login" replace />
+          }
+        />
+
+        {/* ===== Workspace TELESALE ===== */}
         <Route
           element={
             <RequireAuth authState={authState}>
-              <AppLayout />
+              <RequireRole role={role} allow="telesale" homePath={homePath}>
+                <AppLayout />
+              </RequireRole>
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to="/overview" replace />} />
           <Route path="overview" element={<OverviewRoute />} />
           <Route path="list" element={<ListRoute />} />
           <Route path="kb" element={<KbSearch />} />
           <Route
             path="profile"
-            element={
-              <Profile
-                onLoggedOut={() => {
-                  setProfile(null);
-                  setAuthState("guest");
-                }}
-              />
-            }
+            element={<Profile onLoggedOut={() => { setProfile(null); setAuthState("guest"); }} />}
           />
         </Route>
 
-        {/* Lead detail — không có BottomNav */}
+        {/* Lead detail — không BottomNav (telesale) */}
         <Route
           path="/lead/:id"
           element={
@@ -128,10 +158,68 @@ export default function App() {
           }
         />
 
+        {/* ===== Workspace ĐTV ===== */}
+        <Route
+          path="/dtv"
+          element={
+            <RequireAuth authState={authState}>
+              <RequireRole role={role} allow="dtv" homePath={homePath}>
+                <AppLayout navItems={DTV_NAV} />
+              </RequireRole>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<DtvListRoute />} />
+          <Route path="overview" element={<DtvOverviewRoute />} />
+          <Route path="kb" element={<KbSearch />} />
+          <Route
+            path="profile"
+            element={<Profile onLoggedOut={() => { setProfile(null); setAuthState("guest"); }} />}
+          />
+        </Route>
+
+        {/* Chi tiết khách điều trị — không BottomNav */}
+        <Route
+          path="/dtv/patient/:id"
+          element={
+            <RequireAuth authState={authState}>
+              <DtvPatientRoute showToast={showToast} />
+            </RequireAuth>
+          }
+        />
+
+        {/* ===== Workspace CSKH ===== */}
+        <Route
+          path="/cskh"
+          element={
+            <RequireAuth authState={authState}>
+              <RequireRole role={role} allow="cskh" homePath={homePath}>
+                <AppLayout navItems={CSKH_NAV} />
+              </RequireRole>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<CskhListRoute />} />
+          <Route path="overview" element={<CskhOverviewRoute />} />
+          <Route path="kb" element={<KbSearch />} />
+          <Route
+            path="profile"
+            element={<Profile onLoggedOut={() => { setProfile(null); setAuthState("guest"); }} />}
+          />
+        </Route>
+
+        <Route
+          path="/cskh/book/:id"
+          element={
+            <RequireAuth authState={authState}>
+              <CskhBookRoute showToast={showToast} />
+            </RequireAuth>
+          }
+        />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
-      {/* Toast — global */}
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex justify-center px-6">
           <div className="flex max-w-md items-center gap-2 rounded-xl bg-slate-900/95 px-4 py-3 text-[13.5px] font-medium text-white shadow-2xl">
@@ -147,13 +235,7 @@ export default function App() {
 // ============================================================================
 // Guards & Layouts
 // ============================================================================
-function RequireAuth({
-  authState,
-  children,
-}: {
-  authState: AuthState;
-  children: React.ReactNode;
-}) {
+function RequireAuth({ authState, children }: { authState: AuthState; children: React.ReactNode }) {
   const location = useLocation();
   if (authState !== "authed") {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -161,48 +243,41 @@ function RequireAuth({
   return <>{children}</>;
 }
 
-/** Shell có BottomNav (fixed bottom), dùng cho 3 tab chính.
- *  Dùng `h-screen` (KHÔNG phải `min-h-screen`) để cố định viewport height
- *  — content overflow scroll internal trong <main>, BottomNav luôn dính đáy. */
-function AppLayout() {
+// Chặn truy cập chéo workspace (telesale không vào /dtv và ngược lại) → về home đúng role.
+function RequireRole({ role, allow, homePath, children }: { role: WorkspaceRole; allow: WorkspaceRole; homePath: string; children: React.ReactNode }) {
+  if (role !== allow) return <Navigate to={homePath} replace />;
+  return <>{children}</>;
+}
+
+function AppLayout({ navItems }: { navItems?: NavItem[] }) {
   return (
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
-        {/* pb-[88px] để content cuối không bị BottomNav (~72px) che */}
         <main className="flex-1 overflow-y-auto pb-[88px]">
           <Outlet />
         </main>
-        <BottomNav />
+        <BottomNav items={navItems} />
       </div>
     </div>
   );
 }
 
 // ============================================================================
-// Route components — gắn navigation cho từng màn
+// Route components — Telesale
 // ============================================================================
 function OverviewRoute() {
   const navigate = useNavigate();
   return (
     <Overview
       onStartCall={() => navigate("/list")}
-      // "Xem tất cả lịch hẹn" → CallList với filter scheduled. State qua location
-      // để CallList biết initial filter (replace default "to_call").
-      onSeeAllAppointments={() => {
-        setListFilter("scheduled");
-        navigate("/list");
-      }}
+      onSeeAllAppointments={() => { setListFilter("scheduled"); navigate("/list"); }}
     />
   );
 }
 
 function ListRoute() {
   const navigate = useNavigate();
-  return (
-    <CallList
-      onOpenLead={(l) => navigate(`/lead/${l.id}`, { state: { lead: l } })}
-    />
-  );
+  return <CallList onOpenLead={(l) => navigate(`/lead/${l.id}`, { state: { lead: l } })} />;
 }
 
 function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
@@ -211,8 +286,6 @@ function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
   const { id } = useParams();
   const stateLead = (location.state as { lead?: Lead } | null)?.lead;
   const [scriptOpen, setScriptOpen] = useState(false);
-
-  // Deep-link (noti/push → /lead/:id, không có state) → fetch lead theo id.
   const [lead, setLead] = useState<Lead | null>(stateLead ?? null);
   const [loading, setLoading] = useState(!stateLead);
   const [notFound, setNotFound] = useState(false);
@@ -238,9 +311,6 @@ function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
   }
 
   return (
-    // h-screen (không phải min-h-screen) — cố định viewport height. Nếu dùng min-h-screen
-    // thì page tự grow theo content → scroll xảy ra trên html/body → sticky header trong
-    // LeadDetail không bám vì scroll container không phải overflow-y-auto div.
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
         <div className="flex-1 overflow-y-auto">
@@ -248,15 +318,139 @@ function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
             lead={lead}
             onBack={() => navigate(-1)}
             onScript={() => setScriptOpen(true)}
-            onSaved={(msg) => {
-              showToast(msg);
-              navigate("/list");
-            }}
+            onSaved={(msg) => { showToast(msg); navigate("/list"); }}
           />
         </div>
-        {scriptOpen && (
-          <CallScriptSheet lead={lead} onClose={() => setScriptOpen(false)} />
-        )}
+        {scriptOpen && <CallScriptSheet lead={lead} onClose={() => setScriptOpen(false)} />}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Route components — ĐTV
+// ============================================================================
+function DtvListRoute() {
+  const navigate = useNavigate();
+  return <DtvList onOpenPatient={(p) => navigate(`/dtv/patient/${p.id}`, { state: { patient: p } })} />;
+}
+
+function DtvOverviewRoute() {
+  const navigate = useNavigate();
+  return (
+    <DtvOverviewScreen
+      onGoPatients={() => navigate("/dtv")}
+      onOpenPatient={(p) => navigate(`/dtv/patient/${p.id}`, { state: { patient: p } })}
+    />
+  );
+}
+
+function DtvPatientRoute({ showToast }: { showToast: (m: string) => void }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { id } = useParams();
+  const statePatient = (location.state as { patient?: Patient } | null)?.patient;
+  const [patient, setPatient] = useState<Patient | null>(statePatient ?? null);
+  const [loading, setLoading] = useState(!statePatient);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (statePatient || !id) return;
+    let cancelled = false;
+    setLoading(true);
+    fetchPatientById(id)
+      .then((p) => { if (!cancelled) (p ? setPatient(p) : setNotFound(true)); })
+      .catch(() => { if (!cancelled) setNotFound(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id, statePatient]);
+
+  if (notFound) return <Navigate to="/dtv" replace />;
+  if (loading || !patient) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-300/60 text-slate-400">
+        <Loader2 size={28} className="animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen justify-center bg-slate-300/60">
+      <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
+        <div className="flex-1 overflow-y-auto">
+          <DtvPatientDetail
+            patient={patient}
+            onBack={() => navigate(-1)}
+            onSaved={(msg) => { showToast(msg); navigate("/dtv"); }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CskhListRoute() {
+  const navigate = useNavigate();
+  return <CskhList onOpenPatient={(p) => navigate(`/cskh/book/${p.id}`)} />;
+}
+
+function CskhOverviewRoute() {
+  const navigate = useNavigate();
+  return (
+    <CskhOverviewScreen
+      onGoBooking={() => navigate("/cskh")}
+      onOpenPatient={(p) => navigate(`/cskh/book/${p.id}`)}
+    />
+  );
+}
+
+function CskhBookRoute({ showToast }: { showToast: (m: string) => void }) {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    setLoading(true);
+    fetchCarePatientById(id)
+      .then((p) => { if (!cancelled) (p ? setPatient(p) : setNotFound(true)); })
+      .catch(() => { if (!cancelled) setNotFound(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-300/60">
+        <Loader2 size={28} className="animate-spin text-brand-600" />
+      </div>
+    );
+  }
+
+  if (notFound || !patient) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-300/60">
+        <div className="rounded-2xl bg-white px-5 py-4 text-[13.5px] text-slate-600 shadow-sm">
+          Không tìm thấy khách.
+          <button className="ml-3 font-bold text-brand-600" onClick={() => navigate(-1)}>Quay lại</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen justify-center bg-slate-300/60">
+      <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
+        <div className="flex-1 overflow-y-auto">
+          <CskhBook
+            patient={patient}
+            onBack={() => navigate(-1)}
+            onSaved={showToast}
+          />
+        </div>
       </div>
     </div>
   );

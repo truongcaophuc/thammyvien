@@ -70,6 +70,8 @@ self.addEventListener('push', (event) => {
     requireInteraction: false,
   }
 
+  // Chỉ show notification. Live-update trong-app do GraphQL subscription (WebSocket) lo,
+  // không dùng postMessage nữa.
   event.waitUntil(self.registration.showNotification(title, options))
 })
 

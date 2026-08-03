@@ -1,0 +1,193 @@
+// ============================================================================
+// Data layer workspace ĐTV (Điều trị viên / CSKH) — nối GraphQL CEP thật.
+// Hybrid phác đồ theo BUỔI:
+//   - myPatients:          khách ĐTV trực tiếp điều trị (scope theo buổi mình làm)
+//   - saveTreatmentRecord: lưu PHÁC ĐỒ TỔNG của khách (text, cập nhật dần)
+//   - patientSessions:     các BUỔI của khách + nhật ký + ảnh từng buổi
+//   - saveSessionRecord:   lưu nhật ký + ảnh của 1 buổi
+// Ảnh trả dataUri base64 qua GraphQL (như telesale leadSkinPhotos), gán thẳng <img src>.
+// ============================================================================
+import { gql } from "./graphql";
+import type { ServerNotification } from "./notifications";
+
+// Chuông ĐTV: khách vừa được tiếp tân check-in (bắt đầu điều trị).
+const TREATMENT_NOTIFICATIONS = `
+  query TreatmentNotifications {
+    treatmentNotifications { id type title body sentAt referenceId }
+  }
+`;
+export async function fetchTreatmentNotifications(): Promise<ServerNotification[]> {
+  const data = await gql<{ treatmentNotifications: ServerNotification[] }>(TREATMENT_NOTIFICATIONS);
+  return data.treatmentNotifications;
+}
+
+export interface Patient {
+  id: string;            // = Customer.Id
+  name: string;
+  phone: string;
+  service: string;       // liệu trình active
+  sessionDone: number;
+  sessionTotal: number;
+  lastCareAt: string;    // ISO
+  zaloGroupUrl?: string; // TODO mục 2
+  qaScore?: number | null; // TODO mục 5
+  needCareToday: boolean;  // TODO care-schedule
+  protocol: string;        // phác đồ TỔNG (kế hoạch liệu trình)
+  careStatus?: string | null;      // tag Tình trạng chăm sóc (care_status) — CSKH
+  careStatusColor?: string | null; // màu hex của tag
+  satisfaction?: string | null;      // tag Mức hài lòng (satisfaction)
+  satisfactionColor?: string | null; // màu hex của tag
+  careIncident?: boolean;             // CV-21: cờ Kích ứng/Sự cố → highlight
+}
+
+export interface Session {
+  appointmentId: string;
+  sessionNumber: number | null;
+  dateIso: string;
+  status: string;        // pending|confirmed|checked_in|completed|cancelled|no_show|...
+  source: string;        // telesale|cskh|walkin|system|self_service
+  note: string;          // nhật ký buổi
+  photos: string[];      // dataUri base64
+  skinSlug?: string | null;   // CV-13: tình trạng da của buổi này
+  skinName?: string | null;
+  skinColor?: string | null;
+}
+
+export interface TreatmentPhotoInput {
+  fileName: string;
+  base64: string;
+}
+
+const MY_PATIENTS = `
+  query MyPatients {
+    myPatients {
+      id name phone service sessionDone sessionTotal lastCareAt
+      zaloGroupUrl qaScore needCareToday protocol
+    }
+  }
+`;
+
+// ===== Tổng quan ĐTV =====
+export interface DtvOverview {
+  agentName: string;
+  activeCount: number;
+  completedToday: number;
+  completedThisWeek: number;
+  needCareCount: number;
+  almostDoneCount: number;
+}
+const DTV_OVERVIEW = `
+  query DtvOverview {
+    dtvOverview { agentName activeCount completedToday completedThisWeek needCareCount almostDoneCount }
+  }
+`;
+export async function fetchDtvOverview(): Promise<DtvOverview> {
+  const data = await gql<{ dtvOverview: DtvOverview }>(DTV_OVERVIEW);
+  return data.dtvOverview;
+}
+
+export async function fetchMyPatients(): Promise<Patient[]> {
+  const data = await gql<{ myPatients: Patient[] }>(MY_PATIENTS);
+  return data.myPatients;
+}
+
+// Các buổi của khách + nhật ký + ảnh từng buổi.
+const PATIENT_SESSIONS = `
+  query PatientSessions($customerId: UUID!) {
+    patientSessions(customerId: $customerId) {
+      appointmentId sessionNumber dateIso status source note photos
+    }
+  }
+`;
+
+export async function fetchPatientSessions(customerId: string): Promise<Session[]> {
+  const data = await gql<{ patientSessions: Session[] }>(PATIENT_SESSIONS, { customerId });
+  return data.patientSessions ?? [];
+}
+
+export async function fetchPatientById(id: string): Promise<Patient | null> {
+  const list = await fetchMyPatients();
+  return list.find((p) => p.id === id) ?? null;
+}
+
+const SAVE_TREATMENT = `
+  mutation SaveTreatment($input: SaveTreatmentRecordInput!) {
+    saveTreatmentRecord(input: $input) { success }
+  }
+`;
+
+// Lưu PHÁC ĐỒ TỔNG của khách (text). Không kèm ảnh (ảnh nằm ở từng buổi).
+export async function saveTreatmentRecord(input: {
+  customerId: string;
+  protocol: string;
+}): Promise<{ success: boolean }> {
+  const data = await gql<{ saveTreatmentRecord: { success: boolean } }>(
+    SAVE_TREATMENT,
+    { input: { customerId: input.customerId, protocol: input.protocol } },
+  );
+  return { success: data.saveTreatmentRecord.success };
+}
+
+const COMPLETE_TREATMENT = `
+  mutation CompleteTreatment($customerId: UUID!) {
+    completeTreatmentCourse(customerId: $customerId) { success }
+  }
+`;
+
+// Đánh dấu HOÀN THÀNH liệu trình → khách rời danh sách "đang điều trị".
+export async function completeTreatmentCourse(customerId: string): Promise<boolean> {
+  const data = await gql<{ completeTreatmentCourse: { success: boolean } }>(
+    COMPLETE_TREATMENT,
+    { customerId },
+  );
+  return data.completeTreatmentCourse.success;
+}
+
+const COMPLETE_SESSION = `
+  mutation CompleteSession($appointmentId: UUID!) {
+    completeSession(appointmentId: $appointmentId) { success error status }
+  }
+`;
+
+// Hoàn thành 1 BUỔI (checked_in → completed) — giống nút ở màn Lịch hẹn.
+export async function completeSession(appointmentId: string): Promise<{ success: boolean; error: string; status: string }> {
+  const data = await gql<{ completeSession: { success: boolean; error: string; status: string } }>(
+    COMPLETE_SESSION,
+    { appointmentId },
+  );
+  return data.completeSession;
+}
+
+const SAVE_SESSION = `
+  mutation SaveSession($input: SaveSessionRecordInput!) {
+    saveSessionRecord(input: $input) { success photos }
+  }
+`;
+
+// Lưu nhật ký + APPEND ảnh của 1 buổi. Trả toàn bộ ảnh buổi sau khi lưu (dataUri).
+export async function saveSessionRecord(input: {
+  appointmentId: string;
+  note: string;
+  photos: TreatmentPhotoInput[];
+}): Promise<{ success: boolean; photos: string[] }> {
+  const data = await gql<{ saveSessionRecord: { success: boolean; photos: string[] } }>(
+    SAVE_SESSION,
+    { input: { appointmentId: input.appointmentId, note: input.note, photos: input.photos } },
+  );
+  const r = data.saveSessionRecord;
+  return { success: r.success, photos: r.photos || [] };
+}
+
+// Đọc 1 File (image) -> base64 (bỏ prefix data:) cho mutation.
+export function fileToBase64(file: File): Promise<{ fileName: string; base64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result);
+      const comma = res.indexOf(",");
+      resolve({ fileName: file.name || "photo.jpg", base64: comma >= 0 ? res.slice(comma + 1) : res });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}

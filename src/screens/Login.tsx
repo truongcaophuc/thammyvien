@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LogIn, Loader2, User, Lock, AlertCircle } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { login, type AgentProfile } from "../lib/auth";
+import { login, checkSession, type AgentProfile } from "../lib/auth";
 import { ApiError } from "../lib/api";
 
 export default function Login({ onLoggedIn }: { onLoggedIn: (u: AgentProfile) => void }) {
@@ -24,7 +24,10 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (u: AgentProfile) =>
       const user = await login(userName.trim(), password);
       if (remember) localStorage.setItem("telesales:lastUser", userName.trim());
       else localStorage.removeItem("telesales:lastUser");
-      onLoggedIn(user);
+      // /api/token KHÔNG trả role → lấy profile đầy đủ (có role) qua checkSession (GraphQL me)
+      // để điều hướng đúng workspace ngay, không cần reload.
+      const full = await checkSession().catch(() => null);
+      onLoggedIn(full ?? user);
       navigate(fromPath, { replace: true });
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Đăng nhập thất bại. Vui lòng thử lại.";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Calendar, UserPlus, CheckCircle2, Loader2 } from "lucide-react";
+import { Bell, Calendar, UserPlus, CheckCircle2, Loader2, Stethoscope, CalendarPlus } from "lucide-react";
 import Sheet from "../components/Sheet";
 import {
   fetchMyNotifications,
@@ -14,12 +14,16 @@ import {
 const iconOf: Record<string, React.ReactNode> = {
   lead_assigned: <UserPlus size={18} className="text-brand-600" />,
   appointment_reminder: <Calendar size={18} className="text-emerald-600" />,
+  treatment_checkin: <Stethoscope size={18} className="text-emerald-600" />,
+  session_completed: <CalendarPlus size={18} className="text-amber-600" />,
   test: <CheckCircle2 size={18} className="text-sky-600" />,
 };
 
 const bgOf: Record<string, string> = {
   lead_assigned: "bg-brand-100",
   appointment_reminder: "bg-emerald-100",
+  treatment_checkin: "bg-emerald-100",
+  session_completed: "bg-amber-100",
   test: "bg-sky-100",
 };
 
@@ -31,7 +35,15 @@ function bgFor(type: NotificationType) {
   return bgOf[type] ?? "bg-slate-100";
 }
 
-export default function NotificationSheet({ onClose }: { onClose: () => void }) {
+export default function NotificationSheet({
+  onClose,
+  fetcher = fetchMyNotifications,
+  linkPrefix = "/lead/",
+}: {
+  onClose: () => void;
+  fetcher?: () => Promise<ServerNotification[]>; // nguồn khác nhau theo workspace (telesale vs ĐTV)
+  linkPrefix?: string;                            // deep-link: /lead/ (telesale) | /dtv/patient/ (ĐTV)
+}) {
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState<ServerNotification[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -42,7 +54,7 @@ export default function NotificationSheet({ onClose }: { onClose: () => void }) 
     (async () => {
       try {
         setErr(null);
-        const data = await fetchMyNotifications();
+        const data = await fetcher();
         if (cancelled) return;
         setNotifs(data);
         // Mark viewed sau khi load xong → unread badge ở Overview sẽ reset lần render sau
@@ -85,7 +97,7 @@ export default function NotificationSheet({ onClose }: { onClose: () => void }) 
               onClick={() => {
                 if (n.referenceId) {
                   onClose();
-                  navigate(`/lead/${n.referenceId}`);
+                  navigate(`${linkPrefix}${n.referenceId}`);
                 }
               }}
               className={`flex w-full cursor-pointer items-start gap-3 rounded-2xl p-3.5 text-left shadow-card transition-colors ${
