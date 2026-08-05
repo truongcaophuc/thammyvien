@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil } from "lucide-react";
-import type { Patient } from "../../lib/dtv";
-import { getArrivalAvailability, getCalendarBranches, type ArrivalSlot, type CalendarBranch } from "../../lib/calendar";
-import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/cskh";
+import { chipStyle } from "../../lib/chipColor";
+import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle } from "lucide-react";
+import type { Patient } from "../../lib/technician";
+import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
+import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
 import CareStatusEditor from "../../components/CareStatusEditor";
+import SessionEditSheet from "../../components/SessionEditSheet";
 import { ProtocolView } from "../../components/ProtocolView";
 
 // trạng thái buổi (đọc-only cho CSKH)
@@ -52,7 +54,7 @@ function buildBookingDays(): { label: string; iso: string; date: string }[] {
   return out;
 }
 
-export default function CskhBook({
+export default function CustomerCareBook({
   patient,
   onBack,
   onSaved,
@@ -66,6 +68,9 @@ export default function CskhBook({
   const [branches, setBranches] = useState<CalendarBranch[]>([]);
   const [branch, setBranch] = useState<CalendarBranch | null>(null);
   const [initialBranchId, setInitialBranchId] = useState<string>("");
+  const [doctors, setDoctors] = useState<CalendarResource[]>([]);
+  const [doctorId, setDoctorId] = useState<string | null>(null); // CV-15: tick chọn BS (không bắt buộc)
+  const [autoDoctorId, setAutoDoctorId] = useState<string | null>(null); // BS suy từ buổi gần nhất (mốc so "dirty")
   const [slots, setSlots] = useState<ArrivalSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slot, setSlot] = useState<string | null>(null);
@@ -78,6 +83,29 @@ export default function CskhBook({
   const [skinValues, setSkinValues] = useState<CareTagValue[]>([]);
   const [skinBusy, setSkinBusy] = useState<string | null>(null); // appointmentId đang lưu
   const [skinSheetAppt, setSkinSheetAppt] = useState<string | null>(null); // buổi đang mở sheet ghi nhận da
+  const [editAppt, setEditAppt] = useState<string | null>(null); // CV-14: buổi đang mở sheet sửa
+  // CV-23: tích "đã nhắn/gọi hôm nay" ngay tại màn khách
+  const [tickedToday, setTickedToday] = useState(!!patient.interactedToday);
+  const [tickDays, setTickDays] = useState(patient.daysSinceInteraction ?? -1);
+  const [tickBusy, setTickBusy] = useState(false);
+
+  async function toggleInteraction() {
+    if (tickBusy) return;
+    setTickBusy(true);
+    const before = { on: tickedToday, days: tickDays };
+    setTickedToday(!before.on);
+    setTickDays(before.on ? before.days : 0);
+    try {
+      const r = await logCareInteraction(patient.id);
+      setTickedToday(r.interactedToday);
+      setTickDays(r.daysSinceInteraction);
+    } catch {
+      setTickedToday(before.on);
+      setTickDays(before.days);
+    } finally {
+      setTickBusy(false);
+    }
+  }
   const toggleSession = (id: string) =>
     setOpenSessions((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -125,6 +153,24 @@ export default function CskhBook({
     return () => { cancelled = true; };
   }, []);
 
+  // CV-15: danh mục BS theo chi nhánh đang chọn. Mặc định lấy BS của buổi gần nhất (nếu còn trong danh mục)
+  // để CSKH khỏi chọn lại — vẫn đổi được.
+  useEffect(() => {
+    if (!branch) return;
+    let cancelled = false;
+    getCalendarResources("staff-doctor", branch.id)
+      .then((ds) => {
+        if (cancelled) return;
+        setDoctors(ds);
+        const lastDoctor = [...(care?.sessions ?? [])].reverse().find((s) => s.doctorId)?.doctorId ?? null;
+        const preset = lastDoctor && ds.some((d) => d.id === lastDoctor) ? lastDoctor : null;
+        setDoctorId(preset);
+        setAutoDoctorId(preset);
+      })
+      .catch(() => { if (!cancelled) { setDoctors([]); setDoctorId(null); setAutoDoctorId(null); } });
+    return () => { cancelled = true; };
+  }, [branch?.id, care]);
+
   useEffect(() => {
     if (!branch) return;
     let cancelled = false;
@@ -141,9 +187,18 @@ export default function CskhBook({
     if (!branch || !slot || saving) return;
     setSaving(true);
     try {
-      const res = await bookNextTreatmentSession({ customerId: patient.id, branchId: branch.id, startAt: slot });
+      const res = await bookNextTreatmentSession({
+        customerId: patient.id,
+        branchId: branch.id,
+        startAt: slot,
+        doctorResourceId: doctorId,
+      });
       if (res.success) {
-        onSaved(`Đã đặt lịch buổi ${res.sessionNumber} · ${ddmm(slot)} ${formatHm(slot)} tại ${branch.name}`);
+        const bs = doctors.find((d) => d.id === doctorId);
+        onSaved(
+          `Đã đặt lịch buổi ${res.sessionNumber} · ${ddmm(slot)} ${formatHm(slot)} tại ${branch.name}`
+          + (bs ? ` · ${bs.name}` : "")
+        );
         onBack();
       }
     } catch (e) {
@@ -157,7 +212,8 @@ export default function CskhBook({
   const dirty =
     !!slot
     || selectedIso !== (days[0]?.iso ?? localTodayIso())
-    || (!!branch?.id && !!initialBranchId && branch.id !== initialBranchId);
+    || (!!branch?.id && !!initialBranchId && branch.id !== initialBranchId)
+    || doctorId !== autoDoctorId;
 
   function handleBack() {
     if (!dirty) return onBack();
@@ -186,9 +242,32 @@ export default function CskhBook({
       </header>
 
       <div className="space-y-3 p-4 pb-28">
+        {/* CV-23: CV tự xác nhận đã nhắn/gọi — dữ liệu để đo nhịp chăm (không đọc được Zalo, NT3) */}
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm">
+          <div className="min-w-0">
+            <div className="text-[13px] font-bold text-slate-700">Nhịp chăm sóc</div>
+            <div className={`mt-0.5 text-[12.5px] font-semibold ${
+              tickDays < 0 ? "text-slate-400" : tickDays === 0 ? "text-emerald-600" : "text-slate-500"
+            }`}>
+              {tickDays < 0 ? "Chưa chăm lần nào" : tickDays === 0 ? "Đã chăm hôm nay" : `${tickDays} ngày chưa chăm`}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleInteraction}
+            disabled={tickBusy}
+            aria-pressed={tickedToday}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold transition active:scale-95 disabled:opacity-60 ${
+              tickedToday ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {tickBusy ? <Loader2 size={14} className="animate-spin" /> : tickedToday ? <Check size={14} /> : <MessageCircle size={14} />}
+            {tickedToday ? "Đã nhắn/gọi" : "Tích đã nhắn/gọi"}
+          </button>
+        </div>
         {/* CV-13: sửa trạng thái (care_status / mức độ da / hài lòng) */}
         <CareStatusEditor customerId={patient.id} />
-        {/* Hồ sơ điều trị (read-only) — CSKH xem để đặt lịch có ngữ cảnh */}
+        {/* Hồ sơ điều trị — CSKH xem để đặt lịch có ngữ cảnh, và sửa buổi (CV-14) */}
         {care && (care.protocol || care.sessions.length > 0) && (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
             <button onClick={() => setCareOpen((o) => !o)} className="flex w-full items-center gap-2 p-4 text-left">
@@ -229,9 +308,21 @@ export default function CskhBook({
                                 {s.skinName && (
                                   <span
                                     className="whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                                    style={{ background: `${s.skinColor || "#94a3b8"}1a`, color: s.skinColor || "#64748b" }}
+                                    style={chipStyle(s.skinColor)}
                                   >
                                     {s.skinName}
+                                  </span>
+                                )}
+                                {/* CV-14: ĐTV đã làm buổi này (chỉ xem) */}
+                                {s.therapistName && (
+                                  <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">
+                                    <UserRound size={10} /> {s.therapistName}
+                                  </span>
+                                )}
+                                {/* CV-15: BS đã tick khi book buổi này */}
+                                {s.doctorName && (
+                                  <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">
+                                    <Stethoscope size={10} /> {s.doctorName}
                                   </span>
                                 )}
                               </div>
@@ -240,6 +331,16 @@ export default function CskhBook({
                             </button>
                             {open && (
                               <div className="border-t border-slate-100 p-3">
+                                {/* CV-14: CSKH sửa được ngày/ĐTV/bác sĩ/nhật ký/ảnh của buổi */}
+                                <div className="mb-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditAppt(s.appointmentId)}
+                                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
+                                  >
+                                    <Pencil size={13} /> Sửa buổi
+                                  </button>
+                                </div>
                                 {s.note ? (
                                   <div className="whitespace-pre-line text-[12.5px] leading-relaxed text-slate-600">{s.note}</div>
                                 ) : (
@@ -267,7 +368,7 @@ export default function CskhBook({
                                       {s.skinName ? (
                                         <span
                                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold"
-                                          style={{ background: `${s.skinColor || "#94a3b8"}1a`, color: s.skinColor || "#64748b" }}
+                                          style={chipStyle(s.skinColor)}
                                         >
                                           <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.skinColor || "#94a3b8" }} />
                                           {s.skinName}
@@ -341,6 +442,43 @@ export default function CskhBook({
             ))}
           </select>
         </div>
+
+        {/* CV-15: tick chọn bác sĩ khám — không bắt buộc, không giữ chỗ lịch BS */}
+        {doctors.length > 0 && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+              <Stethoscope size={17} className="text-brand-600" /> Bác sĩ khám
+              <span className="text-[12px] font-medium text-slate-400">· không bắt buộc</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setDoctorId(null)}
+                className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 ${
+                  doctorId === null ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                Chưa chọn
+              </button>
+              {doctors.map((d) => {
+                const on = doctorId === d.id;
+                const c = d.colorHex || "#0ea5e9";
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setDoctorId(on ? null : d.id)}
+                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95"
+                    style={chipStyle(c, on)}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
+                    {d.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
@@ -454,7 +592,7 @@ export default function CskhBook({
                         disabled={skinBusy === skinSheetAppt}
                         onClick={() => skinSheetAppt && setSessionSkin(skinSheetAppt, v.slug)}
                         className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 disabled:opacity-60"
-                        style={on ? { background: c, color: "#fff" } : { background: `${c}1a`, color: c }}
+                        style={chipStyle(c, on)}
                       >
                         <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
                         {v.name}
@@ -472,6 +610,18 @@ export default function CskhBook({
           </div>
         );
       })()}
+
+      {/* CV-14: sheet sửa buổi — lưu xong nạp lại hồ sơ điều trị tại chỗ */}
+      {editAppt && (
+        <SessionEditSheet
+          session={care?.sessions.find((s) => s.appointmentId === editAppt) ?? null}
+          onClose={() => setEditAppt(null)}
+          onSaved={(msg) => {
+            onSaved(msg);
+            fetchCareTreatment(patient.id).then(setCare).catch(() => {});
+          }}
+        />
+      )}
 
       {lightbox && (
         <div

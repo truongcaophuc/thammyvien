@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Users, CalendarPlus, CalendarCheck, CalendarRange, ChevronRight, RotateCw, Bell } from "lucide-react";
-import { fetchCskhOverview, fetchCarePatients, fetchCskhNotifications, type CskhOverview } from "../../lib/cskh";
-import type { Patient } from "../../lib/dtv";
+import { fetchCustomerCareOverview, fetchCarePatients, fetchCustomerCareNotifications, type CustomerCareOverview } from "../../lib/customerCare";
+import type { Patient } from "../../lib/technician";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
 
@@ -19,14 +19,14 @@ function colorOf(s: string): string {
 }
 
 // Tổng quan CSKH — chỉ số đặt lịch + danh sách khách (bấm để đặt buổi).
-export default function CskhOverviewScreen({
+export default function CustomerCareOverviewScreen({
   onGoBooking,
   onOpenPatient,
 }: {
   onGoBooking: () => void;
   onOpenPatient: (p: Patient) => void;
 }) {
-  const [data, setData] = useState<CskhOverview | null>(null);
+  const [data, setData] = useState<CustomerCareOverview | null>(null);
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [err, setErr] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -36,17 +36,17 @@ export default function CskhOverviewScreen({
     setErr(false);
     setData(null);
     setPatients(null);
-    fetchCskhOverview().then(setData).catch(() => setErr(true));
+    fetchCustomerCareOverview().then(setData).catch(() => setErr(true));
     fetchCarePatients().then(setPatients).catch(() => setPatients([]));
-    fetchCskhNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
+    fetchCustomerCareNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
   // Refetch TẠI CHỖ (không spinner) cả chỉ số + danh sách + badge khi push đến / app hiện lại.
   const refresh = useCallback(() => {
-    fetchCskhOverview().then(setData).catch(() => {});
+    fetchCustomerCareOverview().then(setData).catch(() => {});
     fetchCarePatients().then(setPatients).catch(() => {});
-    fetchCskhNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
+    fetchCustomerCareNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
   useEffect(() => {
     const onVis = () => { if (document.visibilityState === "visible") refresh(); };
@@ -171,8 +171,8 @@ export default function CskhOverviewScreen({
 
       {notifOpen && (
         <NotificationSheet
-          fetcher={fetchCskhNotifications}
-          linkPrefix="/cskh/book/"
+          fetcher={fetchCustomerCareNotifications}
+          linkPrefix="/customer-care/book/"
           onClose={() => { setNotifOpen(false); setUnread(0); }}
         />
       )}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, CalendarClock, LayoutGrid } from "lucide-react";
+import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, ClipboardList, LayoutGrid } from "lucide-react";
 import {
   Navigate,
   Outlet,
@@ -16,36 +16,38 @@ import KbSearch from "./screens/KbSearch";
 import Profile from "./screens/Profile";
 import LeadDetail from "./screens/LeadDetail";
 import Login from "./screens/Login";
-import DtvList from "./screens/dtv/DtvList";
-import DtvOverviewScreen from "./screens/dtv/DtvOverview";
-import DtvPatientDetail from "./screens/dtv/DtvPatientDetail";
-import CskhList from "./screens/cskh/CskhList";
-import CskhOverviewScreen from "./screens/cskh/CskhOverview";
-import CskhBook from "./screens/cskh/CskhBook";
+import TechnicianList from "./screens/technician/TechnicianList";
+import TechnicianOverviewScreen from "./screens/technician/TechnicianOverview";
+import TechnicianPatientDetail from "./screens/technician/TechnicianPatientDetail";
+import CustomerCareList from "./screens/customerCare/CustomerCareList";
+import CustomerCareOverviewScreen from "./screens/customerCare/CustomerCareOverview";
+import CustomerCareBook from "./screens/customerCare/CustomerCareBook";
 import CallScriptSheet from "./modals/CallScriptSheet";
 import type { Lead } from "./data";
 import { checkSession, type AgentProfile, type WorkspaceRole } from "./lib/auth";
 import { fetchLeadById } from "./lib/leads";
-import { fetchPatientById, type Patient } from "./lib/dtv";
-import { fetchCarePatientById } from "./lib/cskh";
+import { fetchPatientById, type Patient } from "./lib/technician";
+import { fetchCarePatientById } from "./lib/customerCare";
 import { subscribeNotify } from "./lib/gqlSubscribe";
 import { resyncPush } from "./lib/pushNotification";
 
 type AuthState = "checking" | "guest" | "authed";
 
 // Nav của workspace ĐTV (Điều trị viên).
-const DTV_NAV: NavItem[] = [
-  { to: "/dtv/overview", label: "Tổng quan", icon: LayoutGrid },
-  { to: "/dtv", label: "Khách ĐT", icon: Stethoscope },
-  { to: "/dtv/kb", label: "Tra cứu", icon: BookOpen },
-  { to: "/dtv/profile", label: "Cá nhân", icon: UserIcon },
+const TECHNICIAN_NAV: NavItem[] = [
+  { to: "/technician/overview", label: "Tổng quan", icon: LayoutGrid },
+  { to: "/technician", label: "Khách ĐT", icon: Stethoscope },
+  { to: "/technician/kb", label: "Tra cứu", icon: BookOpen },
+  { to: "/technician/profile", label: "Cá nhân", icon: UserIcon },
 ];
 
+// CV-07: "Việc hôm nay" là màn ĐÍCH khi CSKH đăng nhập (deliverable gọi là màn CV mở mỗi ngày),
+// nhưng trong thanh nav vẫn để Tổng quan đứng đầu cho quen tay.
 const CSKH_NAV: NavItem[] = [
-  { to: "/cskh/overview", label: "Tổng quan", icon: LayoutGrid },
-  { to: "/cskh", label: "Đặt lịch", icon: CalendarClock },
-  { to: "/cskh/kb", label: "Tra cứu", icon: BookOpen },
-  { to: "/cskh/profile", label: "Cá nhân", icon: UserIcon },
+  { to: "/customer-care/overview", label: "Tổng quan", icon: LayoutGrid },
+  { to: "/customer-care", label: "Việc hôm nay", icon: ClipboardList },
+  { to: "/customer-care/kb", label: "Tra cứu", icon: BookOpen },
+  { to: "/customer-care/profile", label: "Cá nhân", icon: UserIcon },
 ];
 
 export default function App() {
@@ -96,8 +98,8 @@ export default function App() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const role: WorkspaceRole = profile?.Role === "cskh" ? "cskh" : profile?.Role === "dtv" ? "dtv" : "telesale";
-  const homePath = role === "dtv" ? "/dtv/overview" : role === "cskh" ? "/cskh/overview" : "/overview";
+  const role: WorkspaceRole = profile?.Role === "customer_care" ? "customer_care" : profile?.Role === "technician" ? "technician" : "telesale";
+  const homePath = role === "technician" ? "/technician/overview" : role === "customer_care" ? "/customer-care" : "/overview";
 
   if (authState === "checking") {
     return (
@@ -160,17 +162,17 @@ export default function App() {
 
         {/* ===== Workspace ĐTV ===== */}
         <Route
-          path="/dtv"
+          path="/technician"
           element={
             <RequireAuth authState={authState}>
-              <RequireRole role={role} allow="dtv" homePath={homePath}>
-                <AppLayout navItems={DTV_NAV} />
+              <RequireRole role={role} allow="technician" homePath={homePath}>
+                <AppLayout navItems={TECHNICIAN_NAV} />
               </RequireRole>
             </RequireAuth>
           }
         >
-          <Route index element={<DtvListRoute />} />
-          <Route path="overview" element={<DtvOverviewRoute />} />
+          <Route index element={<TechnicianListRoute />} />
+          <Route path="overview" element={<TechnicianOverviewRoute />} />
           <Route path="kb" element={<KbSearch />} />
           <Route
             path="profile"
@@ -180,27 +182,27 @@ export default function App() {
 
         {/* Chi tiết khách điều trị — không BottomNav */}
         <Route
-          path="/dtv/patient/:id"
+          path="/technician/patient/:id"
           element={
             <RequireAuth authState={authState}>
-              <DtvPatientRoute showToast={showToast} />
+              <TechnicianPatientRoute showToast={showToast} />
             </RequireAuth>
           }
         />
 
         {/* ===== Workspace CSKH ===== */}
         <Route
-          path="/cskh"
+          path="/customer-care"
           element={
             <RequireAuth authState={authState}>
-              <RequireRole role={role} allow="cskh" homePath={homePath}>
+              <RequireRole role={role} allow="customer_care" homePath={homePath}>
                 <AppLayout navItems={CSKH_NAV} />
               </RequireRole>
             </RequireAuth>
           }
         >
-          <Route index element={<CskhListRoute />} />
-          <Route path="overview" element={<CskhOverviewRoute />} />
+          <Route index element={<CustomerCareListRoute />} />
+          <Route path="overview" element={<CustomerCareOverviewRoute />} />
           <Route path="kb" element={<KbSearch />} />
           <Route
             path="profile"
@@ -209,10 +211,10 @@ export default function App() {
         </Route>
 
         <Route
-          path="/cskh/book/:id"
+          path="/customer-care/book/:id"
           element={
             <RequireAuth authState={authState}>
-              <CskhBookRoute showToast={showToast} />
+              <CustomerCareBookRoute showToast={showToast} />
             </RequireAuth>
           }
         />
@@ -243,7 +245,7 @@ function RequireAuth({ authState, children }: { authState: AuthState; children: 
   return <>{children}</>;
 }
 
-// Chặn truy cập chéo workspace (telesale không vào /dtv và ngược lại) → về home đúng role.
+// Chặn truy cập chéo workspace (telesale không vào /technician và ngược lại) → về home đúng role.
 function RequireRole({ role, allow, homePath, children }: { role: WorkspaceRole; allow: WorkspaceRole; homePath: string; children: React.ReactNode }) {
   if (role !== allow) return <Navigate to={homePath} replace />;
   return <>{children}</>;
@@ -330,22 +332,22 @@ function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
 // ============================================================================
 // Route components — ĐTV
 // ============================================================================
-function DtvListRoute() {
+function TechnicianListRoute() {
   const navigate = useNavigate();
-  return <DtvList onOpenPatient={(p) => navigate(`/dtv/patient/${p.id}`, { state: { patient: p } })} />;
+  return <TechnicianList onOpenPatient={(p) => navigate(`/technician/patient/${p.id}`, { state: { patient: p } })} />;
 }
 
-function DtvOverviewRoute() {
+function TechnicianOverviewRoute() {
   const navigate = useNavigate();
   return (
-    <DtvOverviewScreen
-      onGoPatients={() => navigate("/dtv")}
-      onOpenPatient={(p) => navigate(`/dtv/patient/${p.id}`, { state: { patient: p } })}
+    <TechnicianOverviewScreen
+      onGoPatients={() => navigate("/technician")}
+      onOpenPatient={(p) => navigate(`/technician/patient/${p.id}`, { state: { patient: p } })}
     />
   );
 }
 
-function DtvPatientRoute({ showToast }: { showToast: (m: string) => void }) {
+function TechnicianPatientRoute({ showToast }: { showToast: (m: string) => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
@@ -365,7 +367,7 @@ function DtvPatientRoute({ showToast }: { showToast: (m: string) => void }) {
     return () => { cancelled = true; };
   }, [id, statePatient]);
 
-  if (notFound) return <Navigate to="/dtv" replace />;
+  if (notFound) return <Navigate to="/technician" replace />;
   if (loading || !patient) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-300/60 text-slate-400">
@@ -378,10 +380,10 @@ function DtvPatientRoute({ showToast }: { showToast: (m: string) => void }) {
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
         <div className="flex-1 overflow-y-auto">
-          <DtvPatientDetail
+          <TechnicianPatientDetail
             patient={patient}
             onBack={() => navigate(-1)}
-            onSaved={(msg) => { showToast(msg); navigate("/dtv"); }}
+            onSaved={(msg) => { showToast(msg); navigate("/technician"); }}
           />
         </div>
       </div>
@@ -389,22 +391,22 @@ function DtvPatientRoute({ showToast }: { showToast: (m: string) => void }) {
   );
 }
 
-function CskhListRoute() {
+function CustomerCareListRoute() {
   const navigate = useNavigate();
-  return <CskhList onOpenPatient={(p) => navigate(`/cskh/book/${p.id}`)} />;
+  return <CustomerCareList onOpenPatient={(p) => navigate(`/customer-care/book/${p.id}`)} />;
 }
 
-function CskhOverviewRoute() {
+function CustomerCareOverviewRoute() {
   const navigate = useNavigate();
   return (
-    <CskhOverviewScreen
-      onGoBooking={() => navigate("/cskh")}
-      onOpenPatient={(p) => navigate(`/cskh/book/${p.id}`)}
+    <CustomerCareOverviewScreen
+      onGoBooking={() => navigate("/customer-care")}
+      onOpenPatient={(p) => navigate(`/customer-care/book/${p.id}`)}
     />
   );
 }
 
-function CskhBookRoute({ showToast }: { showToast: (m: string) => void }) {
+function CustomerCareBookRoute({ showToast }: { showToast: (m: string) => void }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -445,7 +447,7 @@ function CskhBookRoute({ showToast }: { showToast: (m: string) => void }) {
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
         <div className="flex-1 overflow-y-auto">
-          <CskhBook
+          <CustomerCareBook
             patient={patient}
             onBack={() => navigate(-1)}
             onSaved={showToast}

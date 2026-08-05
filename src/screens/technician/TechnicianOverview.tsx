@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Users, CheckCircle2, CalendarRange, Award, ChevronRight, RotateCw, Bell } from "lucide-react";
-import { fetchDtvOverview, fetchMyPatients, fetchTreatmentNotifications, type DtvOverview, type Patient } from "../../lib/dtv";
+import { fetchTechnicianOverview, fetchMyPatients, fetchTreatmentNotifications, type TechnicianOverview, type Patient } from "../../lib/technician";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
 
@@ -18,14 +18,14 @@ function colorOf(s: string): string {
 }
 
 // Tổng quan ĐTV — chỉ số nhanh + danh sách khách (mở thẳng chi tiết).
-export default function DtvOverviewScreen({
+export default function TechnicianOverviewScreen({
   onGoPatients,
   onOpenPatient,
 }: {
   onGoPatients: () => void;
   onOpenPatient: (p: Patient) => void;
 }) {
-  const [data, setData] = useState<DtvOverview | null>(null);
+  const [data, setData] = useState<TechnicianOverview | null>(null);
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [err, setErr] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -35,7 +35,7 @@ export default function DtvOverviewScreen({
     setErr(false);
     setData(null);
     setPatients(null);
-    fetchDtvOverview().then(setData).catch(() => setErr(true));
+    fetchTechnicianOverview().then(setData).catch(() => setErr(true));
     fetchMyPatients().then(setPatients).catch(() => setPatients([]));
     fetchTreatmentNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
@@ -44,7 +44,7 @@ export default function DtvOverviewScreen({
   // Refetch TẠI CHỖ (không setData(null) -> không spinner) cả chỉ số + danh sách + badge
   // khi push đến (SW báo) hoặc khi app hiện lại — để list/thẻ cập nhật theo, không cần reload.
   const refresh = useCallback(() => {
-    fetchDtvOverview().then(setData).catch(() => {});
+    fetchTechnicianOverview().then(setData).catch(() => {});
     fetchMyPatients().then(setPatients).catch(() => {});
     fetchTreatmentNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
@@ -172,7 +172,7 @@ export default function DtvOverviewScreen({
       {notifOpen && (
         <NotificationSheet
           fetcher={fetchTreatmentNotifications}
-          linkPrefix="/dtv/patient/"
+          linkPrefix="/technician/patient/"
           onClose={() => { setNotifOpen(false); setUnread(0); }}
         />
       )}

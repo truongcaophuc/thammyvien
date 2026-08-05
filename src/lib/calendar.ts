@@ -48,6 +48,34 @@ export async function getCalendarBranches(): Promise<CalendarBranch[]> {
   return data.calendarBranches ?? [];
 }
 
+// CV-15: danh mục bác sĩ để CSKH tick chọn khi book. Không có master-data riêng —
+// bác sĩ là CalendarResource type 'staff-doctor' (quản trị ở CEP /Calendar/ResourcesAdmin).
+export interface CalendarResource {
+  id: string;
+  name: string;
+  typeSlug: string;
+  branchId: string;
+  colorHex?: string | null;
+}
+
+const RESOURCES_QUERY = `
+  query CalendarResources($typeSlug: String, $branchId: UUID) {
+    calendarResources(typeSlug: $typeSlug, branchId: $branchId) { id name typeSlug branchId colorHex }
+  }
+`;
+
+/** Tài nguyên lịch hẹn theo loại; mặc định 'staff-doctor'. branchId bỏ trống = mọi chi nhánh. */
+export async function getCalendarResources(
+  typeSlug = "staff-doctor",
+  branchId?: string,
+): Promise<CalendarResource[]> {
+  const data = await gql<{ calendarResources: CalendarResource[] }>(RESOURCES_QUERY, {
+    typeSlug,
+    branchId: branchId ?? null,
+  });
+  return data.calendarResources ?? [];
+}
+
 export interface LeadAppointment {
   id: string;
   branchId: string;

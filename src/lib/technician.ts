@@ -38,6 +38,16 @@ export interface Patient {
   satisfaction?: string | null;      // tag Mức hài lòng (satisfaction)
   satisfactionColor?: string | null; // màu hex của tag
   careIncident?: boolean;             // CV-21: cờ Kích ứng/Sự cố → highlight
+  // CV-23: nhịp chăm CV tự xác nhận (KHÁC lastCareAt — cái đó là ngày hẹn điều trị)
+  lastInteractionAt?: string | null;
+  daysSinceInteraction?: number;      // -1 = chưa từng tương tác
+  interactedToday?: boolean;          // CV hiện tại đã tích hôm nay chưa
+  // CV-07/CV-08: giai đoạn chăm + độ trễ so với ngưỡng của giai đoạn.
+  // null = không tính nhịp (khách đã bỏ liệu trình / ngừng chăm).
+  carePhase?: string | null;
+  carePhaseColor?: string | null;
+  carePhaseSlug?: string | null;
+  overdueDays?: number | null;        // <=0 còn hạn, >0 đang trễ
 }
 
 export interface Session {
@@ -45,12 +55,16 @@ export interface Session {
   sessionNumber: number | null;
   dateIso: string;
   status: string;        // pending|confirmed|checked_in|completed|cancelled|no_show|...
-  source: string;        // telesale|cskh|walkin|system|self_service
+  source: string;        // telesale|customer_care|walkin|system|self_service
   note: string;          // nhật ký buổi
   photos: string[];      // dataUri base64
+  photoIds?: string[];   // CV-14: id ảnh cùng thứ tự photos (để CSKH xoá)
   skinSlug?: string | null;   // CV-13: tình trạng da của buổi này
   skinName?: string | null;
   skinColor?: string | null;
+  doctorId?: string | null;   // CV-15: bác sĩ CSKH tick khi book
+  doctorName?: string | null;
+  therapistName?: string | null; // CV-14: ĐTV đã làm buổi (CSKH chỉ xem)
 }
 
 export interface TreatmentPhotoInput {
@@ -68,7 +82,7 @@ const MY_PATIENTS = `
 `;
 
 // ===== Tổng quan ĐTV =====
-export interface DtvOverview {
+export interface TechnicianOverview {
   agentName: string;
   activeCount: number;
   completedToday: number;
@@ -76,14 +90,14 @@ export interface DtvOverview {
   needCareCount: number;
   almostDoneCount: number;
 }
-const DTV_OVERVIEW = `
-  query DtvOverview {
-    dtvOverview { agentName activeCount completedToday completedThisWeek needCareCount almostDoneCount }
+const TECHNICIAN_OVERVIEW = `
+  query TechnicianOverview {
+    technicianOverview { agentName activeCount completedToday completedThisWeek needCareCount almostDoneCount }
   }
 `;
-export async function fetchDtvOverview(): Promise<DtvOverview> {
-  const data = await gql<{ dtvOverview: DtvOverview }>(DTV_OVERVIEW);
-  return data.dtvOverview;
+export async function fetchTechnicianOverview(): Promise<TechnicianOverview> {
+  const data = await gql<{ technicianOverview: TechnicianOverview }>(TECHNICIAN_OVERVIEW);
+  return data.technicianOverview;
 }
 
 export async function fetchMyPatients(): Promise<Patient[]> {

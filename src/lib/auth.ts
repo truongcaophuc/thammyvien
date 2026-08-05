@@ -9,7 +9,7 @@ import { api, ApiError } from "./api";
 import { gql } from "./graphql";
 
 // Workspace role — quyết định app route vào không gian nào sau khi login.
-export type WorkspaceRole = "telesale" | "dtv" | "cskh";
+export type WorkspaceRole = "telesale" | "technician" | "customer_care";
 
 export interface AgentProfile {
   Id?: string;
@@ -66,7 +66,7 @@ export async function checkSession(): Promise<AgentProfile | null> {
       localStorage.removeItem(PROFILE_KEY);
       return null;
     }
-    const role = data.me.role === "cskh" ? "cskh" : data.me.role === "dtv" ? "dtv" : "telesale";
+    const role = data.me.role === "customer_care" ? "customer_care" : data.me.role === "technician" ? "technician" : "telesale";
     const profile: AgentProfile = {
       Id: data.me.id,
       UserName: data.me.userName,

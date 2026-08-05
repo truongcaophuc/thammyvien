@@ -42,7 +42,7 @@ export default function NotificationSheet({
 }: {
   onClose: () => void;
   fetcher?: () => Promise<ServerNotification[]>; // nguồn khác nhau theo workspace (telesale vs ĐTV)
-  linkPrefix?: string;                            // deep-link: /lead/ (telesale) | /dtv/patient/ (ĐTV)
+  linkPrefix?: string;                            // deep-link: /lead/ (telesale) | /technician/patient/ (ĐTV)
 }) {
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState<ServerNotification[] | null>(null);

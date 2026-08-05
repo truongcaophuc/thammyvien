@@ -9,7 +9,7 @@ import {
   saveTreatmentRecord, saveSessionRecord, fetchPatientSessions, fileToBase64,
   completeSession,
   type Patient, type Session,
-} from "../../lib/dtv";
+} from "../../lib/technician";
 import { ProtocolView, parseProtocol, normLabel } from "../../components/ProtocolView";
 
 // Chi tiết khách điều trị — HYBRID theo buổi (Internal Meeting mục 1):
@@ -36,7 +36,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   rescheduled: { label: "Dời lịch", cls: "bg-violet-50 text-violet-600" },
 };
 
-export default function DtvPatientDetail({
+export default function TechnicianPatientDetail({
   patient,
   onBack,
   onSaved,

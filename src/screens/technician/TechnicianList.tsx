@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Search, MessageCircle, Star, Clock } from "lucide-react";
-import { fetchMyPatients, type Patient } from "../../lib/dtv";
+import { fetchMyPatients, type Patient } from "../../lib/technician";
 
 // ISO -> dd/mm/yyyy (bỏ giờ). Rỗng/không hợp lệ -> "—".
 function fmtDate(iso: string): string {
@@ -40,7 +40,7 @@ function colorOf(s: string): string {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return AVA_COLORS[h % AVA_COLORS.length];
 }
-export default function DtvList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
+export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [q, setQ] = useState("");
 

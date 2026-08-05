@@ -1,5 +1,5 @@
 import { gql } from "./graphql";
-import type { Patient, Session } from "./dtv";
+import type { Patient, Session } from "./technician";
 import type { ServerNotification } from "./notifications";
 
 // CSKH xem READ-ONLY hồ sơ điều trị của khách (phác đồ tổng + lịch sử buổi + ảnh).
@@ -11,7 +11,7 @@ const CARE_TREATMENT = `
   query CareTreatment($customerId: UUID!) {
     careTreatment(customerId: $customerId) {
       protocol
-      sessions { appointmentId sessionNumber dateIso status source note photos skinSlug skinName skinColor }
+      sessions { appointmentId sessionNumber dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
     }
   }
 `;
@@ -21,20 +21,22 @@ export async function fetchCareTreatment(customerId: string): Promise<CareTreatm
 }
 
 // Chuông CSKH: khách vừa được ĐTV hoàn thành 1 buổi → cần đặt buổi kế.
-const CSKH_NOTIFICATIONS = `
-  query CskhNotifications {
-    cskhNotifications { id type title body sentAt referenceId }
+const CUSTOMER_CARE_NOTIFICATIONS = `
+  query CustomerCareNotifications {
+    customerCareNotifications { id type title body sentAt referenceId }
   }
 `;
-export async function fetchCskhNotifications(): Promise<ServerNotification[]> {
-  const data = await gql<{ cskhNotifications: ServerNotification[] }>(CSKH_NOTIFICATIONS);
-  return data.cskhNotifications;
+export async function fetchCustomerCareNotifications(): Promise<ServerNotification[]> {
+  const data = await gql<{ customerCareNotifications: ServerNotification[] }>(CUSTOMER_CARE_NOTIFICATIONS);
+  return data.customerCareNotifications;
 }
 
 const CARE_PATIENTS = `
   query CarePatients($search: String) {
     carePatients(search: $search) {
       id name phone service sessionDone sessionTotal lastCareAt protocol careStatus careStatusColor satisfaction satisfactionColor careIncident
+      lastInteractionAt daysSinceInteraction interactedToday
+      carePhase carePhaseColor carePhaseSlug overdueDays
     }
   }
 `;
@@ -120,22 +122,103 @@ export async function fetchSkinLevelValues(): Promise<CareTagValue[]> {
   return (data.skinLevelValues ?? []).map((v) => ({ ...v, current: false }));
 }
 
+// ===== CV-07: giai đoạn trong "guồng" chăm sóc =====
+// Tải riêng vì đây là dữ liệu dùng chung: cho thứ tự sắp xếp danh sách việc, và cho phép
+// dựng đủ chip lọc kể cả giai đoạn đang không có khách nào (gom từ danh sách khách thì mất).
+export interface CareRhythmPhase {
+  id: string;
+  name: string;
+  slug: string;
+  scope: string;
+  thresholdDays: number;
+  color?: string | null;
+  displayOrder: number;
+}
+const CARE_RHYTHM_PHASES = `
+  query CareRhythmPhases {
+    careRhythmPhases { id name slug scope thresholdDays color displayOrder }
+  }
+`;
+export async function fetchCareRhythmPhases(): Promise<CareRhythmPhase[]> {
+  const data = await gql<{ careRhythmPhases: CareRhythmPhase[] }>(CARE_RHYTHM_PHASES);
+  return data.careRhythmPhases ?? [];
+}
+
+// ===== CV-23: CV tự tích "đã nhắn/gọi khách hôm nay" =====
+// Không đọc được Zalo cá nhân (NT3) nên nhịp chăm đo bằng việc CV tự xác nhận.
+export interface CareInteractionResult {
+  success: boolean;
+  interactedToday: boolean;      // trạng thái SAU khi bấm
+  lastInteractionAt: string | null;
+  daysSinceInteraction: number;  // -1 = chưa từng
+}
+const LOG_CARE_INTERACTION = `
+  mutation LogCareInteraction($input: LogCareInteractionInput!) {
+    logCareInteraction(input: $input) { success interactedToday lastInteractionAt daysSinceInteraction }
+  }
+`;
+/** Tích/bỏ tích tương tác hôm nay với 1 khách (bấm lại trong ngày = bỏ tích). */
+export async function logCareInteraction(
+  customerId: string,
+  channel?: "manual" | "message" | "call",
+  note?: string | null,
+): Promise<CareInteractionResult> {
+  const data = await gql<{ logCareInteraction: CareInteractionResult }>(LOG_CARE_INTERACTION, {
+    input: { customerId, channel: channel ?? "manual", note: note ?? null },
+  });
+  return data.logCareInteraction;
+}
+
+// ===== CV-14: CSKH sửa thông tin buổi =====
+export interface CareSessionResult {
+  success: boolean;
+  appointmentId: string;
+  sessionNumber: number | null;
+  photos: string[];
+  photoIds: string[];
+}
+export interface TreatmentPhoto {
+  fileName: string;
+  base64: string;
+}
+
+const UPDATE_CARE_SESSION = `
+  mutation UpdateCareSession($input: UpdateCareSessionInput!) {
+    updateCareSession(input: $input) { success appointmentId sessionNumber photos photoIds }
+  }
+`;
+// Trường bỏ trống = KHÔNG đổi. therapistResourceId/doctorResourceId = chuỗi Guid rỗng = gỡ gán.
+export const UNASSIGN = "00000000-0000-0000-0000-000000000000";
+export async function updateCareSession(input: {
+  appointmentId: string;
+  startAt?: string | null;
+  therapistResourceId?: string | null;
+  doctorResourceId?: string | null;
+  note?: string | null;
+  photos?: TreatmentPhoto[] | null;
+  removePhotoIds?: string[] | null;
+}): Promise<CareSessionResult> {
+  const data = await gql<{ updateCareSession: CareSessionResult }>(UPDATE_CARE_SESSION, { input });
+  return data.updateCareSession;
+}
+
+
 // ===== Tổng quan CSKH =====
-export interface CskhOverview {
+export interface CustomerCareOverview {
   agentName: string;
   activeCount: number;
   needBookCount: number;
   todayCount: number;
   thisWeekCount: number;
 }
-const CSKH_OVERVIEW = `
-  query CskhOverview {
-    cskhOverview { agentName activeCount needBookCount todayCount thisWeekCount }
+const CUSTOMER_CARE_OVERVIEW = `
+  query CustomerCareOverview {
+    customerCareOverview { agentName activeCount needBookCount todayCount thisWeekCount }
   }
 `;
-export async function fetchCskhOverview(): Promise<CskhOverview> {
-  const data = await gql<{ cskhOverview: CskhOverview }>(CSKH_OVERVIEW);
-  return data.cskhOverview;
+export async function fetchCustomerCareOverview(): Promise<CustomerCareOverview> {
+  const data = await gql<{ customerCareOverview: CustomerCareOverview }>(CUSTOMER_CARE_OVERVIEW);
+  return data.customerCareOverview;
 }
 
 export async function fetchCarePatientById(id: string): Promise<Patient | null> {
@@ -158,10 +241,11 @@ export async function bookNextTreatmentSession(input: {
   customerId: string;
   branchId: string;
   startAt: string;
+  doctorResourceId?: string | null; // CV-15: bác sĩ CSKH tick; bỏ trống = không gán
 }): Promise<{ success: boolean; appointmentId: string; sessionNumber: number; appointmentDate: string }> {
   const data = await gql<{ bookNextTreatmentSession: { success: boolean; appointmentId: string; sessionNumber: number; appointmentDate: string } }>(
     BOOK_NEXT_SESSION,
-    { input },
+    { input: { ...input, doctorResourceId: input.doctorResourceId ?? null } },
   );
   return data.bookNextTreatmentSession;
 }

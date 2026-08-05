@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { chipStyle } from "../lib/chipColor";
 import { Pencil, X, AlertOctagon, Check } from "lucide-react";
-import { fetchCareTagOptions, setCareTag, createComplainTicket, type CareTagGroup } from "../lib/cskh";
+import { fetchCareTagOptions, setCareTag, createComplainTicket, type CareTagGroup } from "../lib/customerCare";
 
 // đọc 1 cờ boolean trong metadata jsonb (isComplain/isIncident/…)
 function metaFlag(metadata: string | null | undefined, key: string): boolean {
@@ -131,7 +132,7 @@ export default function CareStatusEditor({
               <span
                 key={s.key}
                 className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-semibold"
-                style={{ background: `${s.color}1a`, color: s.color }}
+                style={chipStyle(s.color)}
               >
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
                 {s.name}
@@ -172,7 +173,7 @@ export default function CareStatusEditor({
                         disabled={busy !== null}
                         onClick={() => pick(g, v.slug)}
                         className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 disabled:opacity-60"
-                        style={on ? { background: c, color: "#fff" } : { background: `${c}1a`, color: c }}
+                        style={chipStyle(c, on)}
                       >
                         <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
                         {v.name}
