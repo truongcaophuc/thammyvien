@@ -41,7 +41,10 @@ export interface Patient {
   // CV-23: nhịp chăm CV tự xác nhận (KHÁC lastCareAt — cái đó là ngày hẹn điều trị)
   lastInteractionAt?: string | null;
   daysSinceInteraction?: number;      // -1 = chưa từng tương tác
-  interactedToday?: boolean;          // CV hiện tại đã tích hôm nay chưa
+  interactedToday?: boolean;          // CV hiện tại đã tích hôm nay chưa (bất kỳ kênh nào)
+  messagedToday?: boolean;            // đã tích kênh nhắn tin hôm nay
+  calledToday?: boolean;              // đã tích kênh gọi điện hôm nay
+  todayProofCount?: number;           // số ảnh minh chứng đã gửi hôm nay
   // CV-07/CV-08: giai đoạn chăm + độ trễ so với ngưỡng của giai đoạn.
   // null = không tính nhịp (khách đã bỏ liệu trình / ngừng chăm).
   carePhase?: string | null;

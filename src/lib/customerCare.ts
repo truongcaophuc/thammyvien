@@ -6,11 +6,13 @@ import type { ServerNotification } from "./notifications";
 export interface CareTreatment {
   protocol: string;
   sessions: Session[];
+  proofPhotos: string[];   // ảnh minh chứng lượt chăm hôm nay của CV đang xem
 }
 const CARE_TREATMENT = `
   query CareTreatment($customerId: UUID!) {
     careTreatment(customerId: $customerId) {
       protocol
+      proofPhotos
       sessions { appointmentId sessionNumber dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
     }
   }
@@ -35,7 +37,7 @@ const CARE_PATIENTS = `
   query CarePatients($search: String) {
     carePatients(search: $search) {
       id name phone service sessionDone sessionTotal lastCareAt protocol careStatus careStatusColor satisfaction satisfactionColor careIncident
-      lastInteractionAt daysSinceInteraction interactedToday
+      lastInteractionAt daysSinceInteraction interactedToday messagedToday calledToday todayProofCount
       carePhase carePhaseColor carePhaseSlug overdueDays
     }
   }
@@ -151,20 +153,31 @@ export interface CareInteractionResult {
   interactedToday: boolean;      // trạng thái SAU khi bấm
   lastInteractionAt: string | null;
   daysSinceInteraction: number;  // -1 = chưa từng
+  photos: string[];              // ảnh minh chứng của lượt hôm nay (data: URI)
+  photoIds: string[];
 }
 const LOG_CARE_INTERACTION = `
   mutation LogCareInteraction($input: LogCareInteractionInput!) {
-    logCareInteraction(input: $input) { success interactedToday lastInteractionAt daysSinceInteraction }
+    logCareInteraction(input: $input) { success interactedToday lastInteractionAt daysSinceInteraction photos photoIds }
   }
 `;
-/** Tích/bỏ tích tương tác hôm nay với 1 khách (bấm lại trong ngày = bỏ tích). */
+/**
+ * Tích/bỏ tích tương tác hôm nay với 1 khách (bấm lại trong ngày = bỏ tích).
+ * Gửi kèm `photos` khi đã tích = BỔ SUNG ảnh minh chứng, không bỏ tích.
+ */
 export async function logCareInteraction(
   customerId: string,
   channel?: "manual" | "message" | "call",
   note?: string | null,
+  photos?: TreatmentPhoto[] | null,
 ): Promise<CareInteractionResult> {
   const data = await gql<{ logCareInteraction: CareInteractionResult }>(LOG_CARE_INTERACTION, {
-    input: { customerId, channel: channel ?? "manual", note: note ?? null },
+    input: {
+      customerId,
+      channel: channel ?? "manual",
+      note: note ?? null,
+      photos: photos?.length ? photos : null,
+    },
   });
   return data.logCareInteraction;
 }

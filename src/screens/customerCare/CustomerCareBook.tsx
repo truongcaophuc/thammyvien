@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
-import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle } from "lucide-react";
-import type { Patient } from "../../lib/technician";
+import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera } from "lucide-react";
+import { fileToBase64, type Patient } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
 import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
 import CareStatusEditor from "../../components/CareStatusEditor";
@@ -88,6 +88,28 @@ export default function CustomerCareBook({
   const [tickedToday, setTickedToday] = useState(!!patient.interactedToday);
   const [tickDays, setTickDays] = useState(patient.daysSinceInteraction ?? -1);
   const [tickBusy, setTickBusy] = useState(false);
+  // CV-23: ảnh minh chứng của lượt chăm hôm nay (dbo."File" ReferenceObjectType='CareProof').
+  const [proofs, setProofs] = useState<string[]>([]);
+  const proofRef = useRef<HTMLInputElement>(null);
+
+  // Gửi ảnh kèm lượt hôm nay: chưa tích thì tạo lượt luôn, đã tích thì bổ sung (không bỏ tích).
+  async function addProofs(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length || tickBusy) return;
+    setTickBusy(true);
+    try {
+      const photos = await Promise.all(files.map(fileToBase64));
+      const r = await logCareInteraction(patient.id, "manual", null, photos);
+      setTickedToday(r.interactedToday);
+      setTickDays(r.daysSinceInteraction);
+      setProofs(r.photos ?? []);
+    } catch {
+      /* giữ nguyên trạng thái cũ */
+    } finally {
+      setTickBusy(false);
+    }
+  }
 
   async function toggleInteraction() {
     if (tickBusy) return;
@@ -99,6 +121,7 @@ export default function CustomerCareBook({
       const r = await logCareInteraction(patient.id);
       setTickedToday(r.interactedToday);
       setTickDays(r.daysSinceInteraction);
+      setProofs(r.photos ?? []);   // bỏ tích = lượt biến mất, ảnh của lượt đó không còn hiển thị
     } catch {
       setTickedToday(before.on);
       setTickDays(before.days);
@@ -111,7 +134,11 @@ export default function CustomerCareBook({
 
   useEffect(() => {
     let cancelled = false;
-    fetchCareTreatment(patient.id).then((c) => { if (!cancelled) setCare(c); }).catch(() => {});
+    fetchCareTreatment(patient.id).then((c) => {
+      if (cancelled) return;
+      setCare(c);
+      setProofs(c.proofPhotos ?? []);
+    }).catch(() => {});
     fetchSkinLevelValues().then((v) => { if (!cancelled) setSkinValues(v); }).catch(() => {});
     return () => { cancelled = true; };
   }, [patient.id]);
@@ -243,7 +270,8 @@ export default function CustomerCareBook({
 
       <div className="space-y-3 p-4 pb-28">
         {/* CV-23: CV tự xác nhận đã nhắn/gọi — dữ liệu để đo nhịp chăm (không đọc được Zalo, NT3) */}
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm">
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[13px] font-bold text-slate-700">Nhịp chăm sóc</div>
             <div className={`mt-0.5 text-[12.5px] font-semibold ${
@@ -264,6 +292,34 @@ export default function CustomerCareBook({
             {tickBusy ? <Loader2 size={14} className="animate-spin" /> : tickedToday ? <Check size={14} /> : <MessageCircle size={14} />}
             {tickedToday ? "Đã nhắn/gọi" : "Tích đã nhắn/gọi"}
           </button>
+        </div>
+
+        {/* Ảnh minh chứng của lượt hôm nay — gửi ảnh khi chưa tích sẽ tự tạo lượt */}
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[12.5px] font-bold text-slate-600">Ảnh minh chứng</span>
+            <span className="text-[12px] text-slate-400">{proofs.length ? `· ${proofs.length} ảnh` : "· chưa có"}</span>
+            <button
+              type="button"
+              onClick={() => proofRef.current?.click()}
+              disabled={tickBusy}
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-bold text-slate-600 transition hover:bg-slate-200 active:scale-95 disabled:opacity-60"
+            >
+              <Camera size={14} />
+              Thêm ảnh
+            </button>
+          </div>
+          {proofs.length > 0 && (
+            <div className="mt-2 flex gap-2 overflow-x-auto">
+              {proofs.map((src, i) => (
+                <button key={i} type="button" onClick={() => setLightbox(src)} className="shrink-0">
+                  <img src={src} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+          <input ref={proofRef} type="file" accept="image/*" multiple className="hidden" onChange={addProofs} />
+        </div>
         </div>
         {/* CV-13: sửa trạng thái (care_status / mức độ da / hài lòng) */}
         <CareStatusEditor customerId={patient.id} />
