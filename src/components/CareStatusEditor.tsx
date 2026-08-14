@@ -25,11 +25,15 @@ const SEVERITIES: { key: string; label: string }[] = [
 export default function CareStatusEditor({
   customerId,
   onChanged,
+  only,
+  title = "Trạng thái",
 }: {
   customerId: string;
   onChanged?: () => void;
+  only?: string[];    // chỉ hiện các chiều này (ĐTV chỉ đụng debt_status; CSKH bỏ trống = tất cả)
+  title?: string;
 }) {
-  const [groups, setGroups] = useState<CareTagGroup[] | null>(null);
+  const [allGroups, setAllGroups] = useState<CareTagGroup[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   // CV-20: form ticket complain (mở khi chọn giá trị satisfaction có cờ isComplain)
@@ -42,18 +46,24 @@ export default function CareStatusEditor({
 
   const load = () =>
     fetchCareTagOptions(customerId)
-      .then(setGroups)
-      .catch(() => setGroups([]));
+      .then(setAllGroups)
+      .catch(() => setAllGroups([]));
 
   useEffect(() => {
     let alive = true;
     fetchCareTagOptions(customerId)
-      .then((g) => alive && setGroups(g))
-      .catch(() => alive && setGroups([]));
+      .then((g) => alive && setAllGroups(g))
+      .catch(() => alive && setAllGroups([]));
     return () => {
       alive = false;
     };
   }, [customerId]);
+
+  // `only` lọc ở client: careTagOptions trả sẵn mọi chiều, không cần thêm tham số BE.
+  const groups = useMemo(
+    () => (allGroups && only ? allGroups.filter((g) => only.includes(g.groupSlug)) : allGroups),
+    [allGroups, only],
+  );
 
   // Giá trị đang chọn của từng chiều → hàng tóm tắt (dot + chữ).
   const summary = useMemo(() => {
@@ -69,7 +79,7 @@ export default function CareStatusEditor({
     const next = g.current === valueSlug ? null : valueSlug; // bấm lại = bỏ chọn
     setBusy(g.groupSlug + valueSlug);
     // optimistic
-    setGroups((prev) =>
+    setAllGroups((prev) =>
       (prev ?? []).map((x) =>
         x.groupSlug === g.groupSlug
           ? { ...x, current: next, values: x.values.map((v) => ({ ...v, current: v.slug === next })) }
@@ -118,7 +128,7 @@ export default function CareStatusEditor({
       {/* Dòng tóm tắt: liếc thấy trạng thái + nút Sửa */}
       <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <div className="text-[13px] font-bold text-slate-700">Trạng thái</div>
+          <div className="text-[13px] font-bold text-slate-700">{title}</div>
           <button
             onClick={() => setSheetOpen(true)}
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
@@ -154,7 +164,7 @@ export default function CareStatusEditor({
           className={`absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-2xl bg-white shadow-2xl transition-transform duration-300 ${sheetOpen ? "translate-y-0" : "translate-y-full"}`}
         >
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <div className="text-[15px] font-bold text-slate-800">Cập nhật trạng thái</div>
+            <div className="text-[15px] font-bold text-slate-800">Cập nhật {title.toLowerCase()}</div>
             <button onClick={() => setSheetOpen(false)} aria-label="Đóng" className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100">
               <X size={18} />
             </button>

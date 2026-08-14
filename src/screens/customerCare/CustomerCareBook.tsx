@@ -3,8 +3,9 @@ import { chipStyle } from "../../lib/chipColor";
 import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera } from "lucide-react";
 import { fileToBase64, type Patient } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
-import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
+import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, saveCskhNote, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
 import CareStatusEditor from "../../components/CareStatusEditor";
+import CustomerProfileCard from "../../components/CustomerProfileCard";
 import SessionEditSheet from "../../components/SessionEditSheet";
 import { ProtocolView } from "../../components/ProtocolView";
 
@@ -77,6 +78,8 @@ export default function CustomerCareBook({
   const [saving, setSaving] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
   const [care, setCare] = useState<CareTreatment | null>(null);
+  const [note, setNote] = useState("");        // note CSKH theo liệu trình
+  const [noteBusy, setNoteBusy] = useState(false);
   const [careOpen, setCareOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [openSessions, setOpenSessions] = useState<Set<string>>(() => new Set());
@@ -138,6 +141,7 @@ export default function CustomerCareBook({
       if (cancelled) return;
       setCare(c);
       setProofs(c.proofPhotos ?? []);
+      setNote(c.cskhNote ?? "");
     }).catch(() => {});
     fetchSkinLevelValues().then((v) => { if (!cancelled) setSkinValues(v); }).catch(() => {});
     return () => { cancelled = true; };
@@ -235,9 +239,21 @@ export default function CustomerCareBook({
     }
   };
 
+  const noteDirty = !!care && note.trim() !== (care.cskhNote ?? "").trim();
+
+  async function saveNote() {
+    setNoteBusy(true);
+    try {
+      await saveCskhNote(patient.id, note.trim());
+      setCare((prev) => prev && ({ ...prev, cskhNote: note.trim(), cskhNoteAt: new Date().toISOString() }));
+    } catch { /* giữ nguyên draft để CV thử lại */ }
+    setNoteBusy(false);
+  }
+
   const canSave = !!branch && !!slot && !saving;
   const dirty =
-    !!slot
+    noteDirty
+    || !!slot
     || selectedIso !== (days[0]?.iso ?? localTodayIso())
     || (!!branch?.id && !!initialBranchId && branch.id !== initialBranchId)
     || doctorId !== autoDoctorId;
@@ -323,6 +339,38 @@ export default function CustomerCareBook({
         </div>
         {/* CV-13: sửa trạng thái (care_status / mức độ da / hài lòng) */}
         <CareStatusEditor customerId={patient.id} />
+        {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
+        <CustomerProfileCard customerId={patient.id} />
+
+        {/* Note CSKH — theo LIỆU TRÌNH đang chạy, dùng chung ô với màn CEP. */}
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+            <Pencil size={16} className="text-brand-600" /> Note khách
+            {care?.cskhNoteAt && (
+              <span className="ml-auto text-[11.5px] font-normal text-slate-400">
+                {care.cskhNoteBy ? `${care.cskhNoteBy} · ` : ""}{ddmm(care.cskhNoteAt)}
+              </span>
+            )}
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            placeholder="Ghi chú riêng của CSKH cho liệu trình này…"
+            className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-[13.5px] leading-snug text-slate-700 outline-none focus:border-brand-400"
+          />
+          {noteDirty && (
+            <button
+              type="button"
+              onClick={saveNote}
+              disabled={noteBusy}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3.5 py-1.5 text-[12.5px] font-bold text-white transition active:scale-95 disabled:opacity-60"
+            >
+              {noteBusy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Lưu note
+            </button>
+          )}
+        </div>
+
         {/* Hồ sơ điều trị — CSKH xem để đặt lịch có ngữ cảnh, và sửa buổi (CV-14) */}
         {care && (care.protocol || care.sessions.length > 0) && (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm">

@@ -11,6 +11,11 @@ import {
   type Patient, type Session,
 } from "../../lib/technician";
 import { ProtocolView, parseProtocol, normLabel } from "../../components/ProtocolView";
+import CustomerProfileCard from "../../components/CustomerProfileCard";
+import CareStatusEditor from "../../components/CareStatusEditor";
+
+// Hai chiều Trợ lý được đụng. Hằng cấp module vì prop `only` là mảng — inline sẽ đổi ref mỗi render.
+const TECHNICIAN_TAGS = ["customer_tier", "debt_status"];
 
 // Chi tiết khách điều trị — HYBRID theo buổi (Internal Meeting mục 1):
 //   1) Phác đồ TỔNG (kế hoạch liệu trình) — text/khách, cập nhật dần.
@@ -281,6 +286,14 @@ export default function TechnicianPatientDetail({
       </header>
 
       <div className="space-y-3 p-4 pb-28">
+        {/* Hồ sơ khách Telesale nhập — CSKH dùng chung component này. */}
+        <CustomerProfileCard customerId={patient.id} />
+
+        {/* Phân loại KH + tình trạng thanh toán — sửa ở ĐÂY (tab Lịch hẹn chỉ hiển thị).
+            Tag gắn ở khách/liệu trình nên CSKH kế thừa ngay; các chiều riêng của CSKH
+            (care_status / mức hài lòng) không hiện ở đây. */}
+        <CareStatusEditor customerId={patient.id} only={TECHNICIAN_TAGS} />
+
         {/* Phác đồ tổng — nhập theo 4 field cấu trúc, lưu gộp thành text; xem ở dạng có mục + icon. */}
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">

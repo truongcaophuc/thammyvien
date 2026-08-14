@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, ClipboardList, LayoutGrid } from "lucide-react";
+import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, ClipboardList, LayoutGrid, CalendarDays } from "lucide-react";
 import {
   Navigate,
   Outlet,
@@ -19,6 +19,7 @@ import Login from "./screens/Login";
 import TechnicianList from "./screens/technician/TechnicianList";
 import TechnicianOverviewScreen from "./screens/technician/TechnicianOverview";
 import TechnicianPatientDetail from "./screens/technician/TechnicianPatientDetail";
+import TechnicianAppointments from "./screens/technician/TechnicianAppointments";
 import CustomerCareList from "./screens/customerCare/CustomerCareList";
 import CustomerCareOverviewScreen from "./screens/customerCare/CustomerCareOverview";
 import CustomerCareBook from "./screens/customerCare/CustomerCareBook";
@@ -37,6 +38,7 @@ type AuthState = "checking" | "guest" | "authed";
 const TECHNICIAN_NAV: NavItem[] = [
   { to: "/technician/overview", label: "Tổng quan", icon: LayoutGrid },
   { to: "/technician", label: "Khách ĐT", icon: Stethoscope },
+  { to: "/technician/appointments", label: "Lịch hẹn", icon: CalendarDays },
   { to: "/technician/kb", label: "Tra cứu", icon: BookOpen },
   { to: "/technician/profile", label: "Cá nhân", icon: UserIcon },
 ];
@@ -173,6 +175,7 @@ export default function App() {
         >
           <Route index element={<TechnicianListRoute />} />
           <Route path="overview" element={<TechnicianOverviewRoute />} />
+          <Route path="appointments" element={<TechnicianAppointments />} />
           <Route path="kb" element={<KbSearch />} />
           <Route
             path="profile"

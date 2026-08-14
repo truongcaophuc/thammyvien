@@ -7,12 +7,17 @@ export interface CareTreatment {
   protocol: string;
   sessions: Session[];
   proofPhotos: string[];   // ảnh minh chứng lượt chăm hôm nay của CV đang xem
+  // Note CSKH theo LIỆU TRÌNH (mua gói mới → note mới). Cùng ô với màn CEP.
+  cskhNote: string;
+  cskhNoteBy: string;
+  cskhNoteAt: string;
 }
 const CARE_TREATMENT = `
   query CareTreatment($customerId: UUID!) {
     careTreatment(customerId: $customerId) {
       protocol
       proofPhotos
+      cskhNote cskhNoteBy cskhNoteAt
       sessions { appointmentId sessionNumber dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
     }
   }
@@ -92,6 +97,17 @@ export async function setCareTag(
     { input: { customerId, groupSlug, valueSlug, appointmentId: appointmentId ?? null } }
   );
   return data.setCareTag;
+}
+
+// Lưu note CSKH của liệu trình đang chạy (BE tự tìm course active của khách).
+const SAVE_CSKH_NOTE = `
+  mutation SaveCskhNote($customerId: UUID!, $note: String!) {
+    saveCskhNote(customerId: $customerId, note: $note) { success }
+  }
+`;
+export async function saveCskhNote(customerId: string, note: string): Promise<boolean> {
+  const data = await gql<{ saveCskhNote: { success: boolean } }>(SAVE_CSKH_NOTE, { customerId, note });
+  return data.saveCskhNote.success;
 }
 
 // CV-20: tạo ticket complain khi CV chọn "Complain" ở Mức độ hài lòng.

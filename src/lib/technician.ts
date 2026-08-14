@@ -122,6 +122,49 @@ export async function fetchPatientSessions(customerId: string): Promise<Session[
   return data.patientSessions ?? [];
 }
 
+// ---- Tab Lịch hẹn (agenda theo ngày) ----
+export interface TechnicianAppointment {
+  appointmentId: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  startAtIso: string;
+  status: string;        // pending|confirmed|arrived|checked_in|completed|cancelled|no_show
+  source: string;
+  sessionNumber: number | null;
+  sessionTotal: number;
+  serviceName: string;
+  branchName: string;
+  therapistName?: string | null;
+  doctorName?: string | null;
+  // Phân loại KH (tag `customer_tier`, gán tay): KH mới / KH cũ / KH VIP.
+  tierSlug?: string | null;
+  tierName?: string | null;
+  tierColor?: string | null;
+}
+
+const TECHNICIAN_APPOINTMENTS = `
+  query TechnicianAppointments($fromDate: String!, $toDate: String!) {
+    technicianAppointments(fromDate: $fromDate, toDate: $toDate) {
+      appointmentId customerId customerName customerPhone startAtIso status source
+      sessionNumber sessionTotal serviceName branchName therapistName doctorName
+      tierSlug tierName tierColor
+    }
+  }
+`;
+
+/** fromDate/toDate: yyyy-MM-dd, bao cả 2 đầu. */
+export async function fetchTechnicianAppointments(
+  fromDate: string,
+  toDate: string,
+): Promise<TechnicianAppointment[]> {
+  const data = await gql<{ technicianAppointments: TechnicianAppointment[] }>(
+    TECHNICIAN_APPOINTMENTS,
+    { fromDate, toDate },
+  );
+  return data.technicianAppointments ?? [];
+}
+
 export async function fetchPatientById(id: string): Promise<Patient | null> {
   const list = await fetchMyPatients();
   return list.find((p) => p.id === id) ?? null;
