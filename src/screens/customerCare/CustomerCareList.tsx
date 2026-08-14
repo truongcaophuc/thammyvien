@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
-import { Loader2, Search, SlidersHorizontal, X, AlertTriangle, MessageCircle, Phone, Camera, Check } from "lucide-react";
-import { fetchCarePatients, fetchCareRhythmPhases, logCareInteraction, type CareRhythmPhase } from "../../lib/customerCare";
+import { Loader2, Search, SlidersHorizontal, X, AlertTriangle, MessageCircle } from "lucide-react";
+import { fetchCarePatients, fetchCareRhythmPhases, type CareRhythmPhase } from "../../lib/customerCare";
 import type { Patient } from "../../lib/technician";
-import CareTouchSheet from "../../components/CareTouchSheet";
 
 // CV-08: ngưỡng lấy từ giai đoạn (bảng CareRhythmPhase, quản trị trên web) -> server trả overdueDays.
 // overdueDays null = khách không tính nhịp (đã bỏ liệu trình / ngừng chăm).
@@ -52,45 +51,6 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
   const [overdueOnly, setOverdueOnly] = useState(false);                 // CV-08: chỉ khách đang trễ
   const [phases, setPhases] = useState<CareRhythmPhase[]>([]);           // guồng: thứ tự + đủ giai đoạn
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [tickBusy, setTickBusy] = useState<string | null>(null); // CV-23: khách đang lưu tick
-  const [touch, setTouch] = useState<{ p: Patient; ch: "message" | "call" } | null>(null); // sheet ghi chú + ảnh
-
-  const patchPatient = (id: string, v: Partial<Patient>) =>
-    setPatients((prev) => (prev ?? []).map((x) => (x.id === id ? { ...x, ...v } : x)));
-
-  // CV-23: tích/bỏ tích theo TỪNG KÊNH (nhắn tin / gọi điện là hai lượt độc lập trong ngày).
-  // Optimistic, lỗi thì trả lại trạng thái cũ.
-  async function toggleInteraction(p: Patient, ch: "message" | "call") {
-    if (tickBusy) return;
-    const key = ch === "message" ? "messagedToday" : "calledToday";
-    const other = ch === "message" ? p.calledToday : p.messagedToday;
-    const was = ch === "message" ? p.messagedToday : p.calledToday;
-    setTickBusy(p.id);
-    const before = { today: p.interactedToday, days: p.daysSinceInteraction, at: p.lastInteractionAt, ch: was };
-    patchPatient(p.id, {
-      [key]: !was,
-      interactedToday: !was || !!other,
-      daysSinceInteraction: was ? before.days : 0,
-    } as Partial<Patient>);
-    try {
-      const r = await logCareInteraction(p.id, ch);
-      patchPatient(p.id, {
-        [key]: r.interactedToday,                       // interactedToday của mutation = trạng thái của chính kênh vừa bấm
-        interactedToday: r.interactedToday || !!other,
-        daysSinceInteraction: r.daysSinceInteraction,
-        lastInteractionAt: r.lastInteractionAt,
-      } as Partial<Patient>);
-    } catch {
-      patchPatient(p.id, {
-        [key]: before.ch,
-        interactedToday: before.today,
-        daysSinceInteraction: before.days,
-        lastInteractionAt: before.at,
-      } as Partial<Patient>);
-    } finally {
-      setTickBusy(null);
-    }
-  }
 
   // Chip filter theo tình trạng chăm sóc — đếm từ list đã tải (thứ tự theo mức churn).
   const careChips = useMemo(() => {
@@ -317,10 +277,9 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
             </button>
 
             {/* CV-23: CV tự xác nhận đã nhắn / đã gọi hôm nay — nguồn duy nhất để đo nhịp chăm (NT3).
-                Bấm nhanh = tích/bỏ tích; nút máy ảnh mở sheet ghi chú + ảnh minh chứng. */}
+                Card ngoài chỉ hiển thị trạng thái; thao tác chỉnh sửa nằm trong màn chi tiết khách. */}
             {(() => {
               const rhythm = careRhythm(p);
-              const busy = tickBusy === p.id;
               return (
                 <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2">
                   <span className="flex min-w-0 items-center gap-2">
@@ -335,38 +294,16 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
                     <span className={`truncate text-[12px] font-semibold ${rhythm.cls}`}>{rhythm.text}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {([["message", "Đã nhắn", MessageCircle, !!p.messagedToday], ["call", "Đã gọi", Phone, !!p.calledToday]] as const).map(
-                      ([ch, label, Icon, on]) => (
-                        <button
-                          key={ch}
-                          type="button"
-                          onClick={() => toggleInteraction(p, ch)}
-                          disabled={busy}
-                          aria-pressed={on}
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-bold transition active:scale-95 disabled:opacity-60 ${
-                            on ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                          }`}
-                        >
-                          {busy ? <Loader2 size={13} className="animate-spin" /> : on ? <Check size={13} /> : <Icon size={13} />}
-                          {label}
-                        </button>
-                      ),
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setTouch({ p, ch: p.messagedToday && !p.calledToday ? "call" : "message" })}
-                      aria-label="Ghi chú / ảnh minh chứng"
-                      className={`relative inline-flex items-center rounded-full p-1.5 transition active:scale-95 ${
-                        p.todayProofCount ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-bold ${
+                        p.interactedToday || p.messagedToday || p.calledToday
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      <Camera size={14} />
-                      {!!p.todayProofCount && (
-                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[9.5px] font-bold text-white">
-                          {p.todayProofCount}
-                        </span>
-                      )}
-                    </button>
+                      <MessageCircle size={13} />
+                      Đã liên hệ
+                    </span>
                   </span>
                 </div>
               );
@@ -375,15 +312,6 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
           ))
         )}
       </div>
-
-      {touch && (
-        <CareTouchSheet
-          patient={touch.p}
-          defaultChannel={touch.ch}
-          onClose={() => setTouch(null)}
-          onSaved={(patch) => { patchPatient(touch.p.id, patch); setTouch(null); }}
-        />
-      )}
 
       {/* Bottom sheet "Bộ lọc" — chiều phụ (satisfaction; chừa chỗ thêm chiều khác) */}
       <div className={`fixed inset-0 z-30 ${sheetOpen ? "" : "pointer-events-none"}`} aria-hidden={!sheetOpen}>
@@ -466,4 +394,3 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
     </div>
   );
 }
-
