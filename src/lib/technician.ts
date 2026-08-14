@@ -137,13 +137,34 @@ export interface TechnicianAppointment {
   branchName: string;
   therapistName?: string | null;
   doctorName?: string | null;
+  resources: AppointmentResource[];
   // Phân loại KH (tag `customer_tier`, gán tay): KH mới / KH cũ / KH VIP.
   tierSlug?: string | null;
   tierName?: string | null;
   tierColor?: string | null;
 }
 
+export interface AppointmentResource {
+  resourceId: string;
+  resourceName: string;
+  resourceTypeName: string;
+  resourceTypeSlug: string;
+  role: string;
+  allocationStatus: string;
+}
+
 const TECHNICIAN_APPOINTMENTS = `
+  query TechnicianAppointments($fromDate: String!, $toDate: String!) {
+    technicianAppointments(fromDate: $fromDate, toDate: $toDate) {
+      appointmentId customerId customerName customerPhone startAtIso status source
+      sessionNumber sessionTotal serviceName branchName therapistName doctorName
+      resources { resourceId resourceName resourceTypeName resourceTypeSlug role allocationStatus }
+      tierSlug tierName tierColor
+    }
+  }
+`;
+
+const TECHNICIAN_APPOINTMENTS_LEGACY = `
   query TechnicianAppointments($fromDate: String!, $toDate: String!) {
     technicianAppointments(fromDate: $fromDate, toDate: $toDate) {
       appointmentId customerId customerName customerPhone startAtIso status source
@@ -158,11 +179,21 @@ export async function fetchTechnicianAppointments(
   fromDate: string,
   toDate: string,
 ): Promise<TechnicianAppointment[]> {
-  const data = await gql<{ technicianAppointments: TechnicianAppointment[] }>(
-    TECHNICIAN_APPOINTMENTS,
-    { fromDate, toDate },
-  );
-  return data.technicianAppointments ?? [];
+  try {
+    const data = await gql<{ technicianAppointments: TechnicianAppointment[] }>(
+      TECHNICIAN_APPOINTMENTS,
+      { fromDate, toDate },
+    );
+    return (data.technicianAppointments ?? []).map((a) => ({ ...a, resources: a.resources ?? [] }));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (!msg.includes("resources")) throw e;
+    const data = await gql<{ technicianAppointments: Array<Omit<TechnicianAppointment, "resources">> }>(
+      TECHNICIAN_APPOINTMENTS_LEGACY,
+      { fromDate, toDate },
+    );
+    return (data.technicianAppointments ?? []).map((a) => ({ ...a, resources: [] }));
+  }
 }
 
 export async function fetchPatientById(id: string): Promise<Patient | null> {

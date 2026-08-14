@@ -1,45 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, MessageCircle, ImagePlus, X, Loader2,
-  ClipboardList, ChevronDown, CalendarClock, Check, CheckCircle2,
-  Pencil, Stethoscope, Target, Settings2, AlertTriangle,
-  type LucideIcon,
+  ArrowLeft, MessageCircle, Loader2,
+  ClipboardList, Check, CheckCircle2,
+  ChevronDown, Pencil,
 } from "lucide-react";
 import {
-  saveTreatmentRecord, saveSessionRecord, fetchPatientSessions, fileToBase64,
+  saveTreatmentRecord, fetchPatientSessions,
   completeSession,
   type Patient, type Session,
 } from "../../lib/technician";
 import { ProtocolView, parseProtocol, normLabel } from "../../components/ProtocolView";
 import CustomerProfileCard from "../../components/CustomerProfileCard";
 import CareStatusEditor from "../../components/CareStatusEditor";
+import { getCalendarResources, type CalendarResource } from "../../lib/calendar";
 
 // Hai chiều Trợ lý được đụng. Hằng cấp module vì prop `only` là mảng — inline sẽ đổi ref mỗi render.
 const TECHNICIAN_TAGS = ["customer_tier", "debt_status"];
 
-// Chi tiết khách điều trị — HYBRID theo buổi (Internal Meeting mục 1):
-//   1) Phác đồ TỔNG (kế hoạch liệu trình) — text/khách, cập nhật dần.
-//   2) Nhật ký từng BUỔI — mỗi buổi ghi thao tác + ảnh trước/sau riêng.
-
-// ISO -> dd/mm/yyyy. Rỗng/không hợp lệ -> "—".
-function fmtDate(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
-}
-
-const STATUS: Record<string, { label: string; cls: string }> = {
-  pending: { label: "Chờ", cls: "bg-slate-100 text-slate-500" },
-  confirmed: { label: "Đã xác nhận", cls: "bg-sky-50 text-sky-600" },
-  arrived: { label: "Đã đến", cls: "bg-indigo-50 text-indigo-600" },
-  checked_in: { label: "Đang làm", cls: "bg-amber-50 text-amber-600" },
-  completed: { label: "Hoàn thành", cls: "bg-emerald-50 text-emerald-600" },
-  cancelled: { label: "Đã huỷ", cls: "bg-rose-50 text-rose-500" },
-  no_show: { label: "Vắng", cls: "bg-rose-50 text-rose-500" },
-  rescheduled: { label: "Dời lịch", cls: "bg-violet-50 text-violet-600" },
-};
+// Chi tiết khách điều trị: Trợ lý cập nhật phác đồ tổng và hoàn tất buổi.
+// Nhật ký từng buổi/ảnh trước sau chuyển sang màn CSKH để hồ sơ điều trị nằm một chỗ.
 
 export default function TechnicianPatientDetail({
   patient,
@@ -55,10 +34,9 @@ export default function TechnicianPatientDetail({
   const [savingProto, setSavingProto] = useState(false);
   const [editingProto, setEditingProto] = useState(false); // read-mode có format; bấm "Sửa" mới về form 4 field
   const [sessions, setSessions] = useState<Session[] | null>(null);
-  const [activeAppointmentId, setActiveAppointmentId] = useState<string>("");
-  const [draftByAppointmentId, setDraftByAppointmentId] = useState<Record<string, SessionDraft>>({});
   const [showDiscard, setShowDiscard] = useState(false);
-  const [lightbox, setLightbox] = useState<string | null>(null); // ảnh đang xem full
+  const [doctors, setDoctors] = useState<CalendarResource[]>([]);
+  const [therapists, setTherapists] = useState<CalendarResource[]>([]);
 
   // Gộp 4 field -> text `Nhãn: value` (nguồn để lưu).
   const protocolText = useMemo(() => fieldsToProtocol(fields), [fields]);
@@ -71,11 +49,6 @@ export default function TechnicianPatientDetail({
   );
   const setField = (key: keyof ProtoFields, v: string) => setFields((p) => ({ ...p, [key]: v }));
 
-  const activeSession = useMemo(
-    () => (sessions ?? []).find((s) => s.appointmentId === activeAppointmentId) ?? null,
-    [sessions, activeAppointmentId],
-  );
-
   // Buổi đang điều trị (checked_in) — nút "Hoàn thành buổi" chỉ tác động buổi này (giống Lịch hẹn).
   const checkedInSession = useMemo(
     () => (sessions ?? []).find((s) => s.status === "checked_in") ?? null,
@@ -87,22 +60,7 @@ export default function TechnicianPatientDetail({
     [sessions, patient.sessionDone],
   );
 
-  const activeDraft = useMemo(
-    () => (activeAppointmentId ? draftByAppointmentId[activeAppointmentId] : undefined),
-    [draftByAppointmentId, activeAppointmentId],
-  );
-
-  const activeSessionDirty = useMemo(() => {
-    if (!activeDraft) return false;
-    return activeDraft.note.trim() !== activeDraft.noteSaved.trim() || activeDraft.added.length > 0;
-  }, [activeDraft]);
-
-  const anyDirty = useMemo(() => {
-    if (protocolDirty) return true;
-    return Object.values(draftByAppointmentId).some(
-      (d) => d.note.trim() !== d.noteSaved.trim() || d.added.length > 0,
-    );
-  }, [draftByAppointmentId, protocolDirty]);
+  const anyDirty = protocolDirty;
 
   useEffect(() => {
     let cancelled = false;
@@ -110,41 +68,17 @@ export default function TechnicianPatientDetail({
       if (cancelled) return;
       // Chuẩn thiết kế: mỗi appointment = 1 buổi ĐÃ đặt lịch thật (không có "slot system").
       // Hiện tất cả — bỏ hack lọc theo source='system'.
-      const filtered = s;
-      setSessions(filtered);
-      setDraftByAppointmentId((prev) => {
-        const next: Record<string, SessionDraft> = { ...prev };
-        filtered.forEach((it) => {
-          if (!next[it.appointmentId]) {
-            next[it.appointmentId] = {
-              note: it.note || "",
-              noteSaved: (it.note || "").trim(),
-              added: [],
-              saving: false,
-            };
-          } else {
-            next[it.appointmentId] = {
-              ...next[it.appointmentId],
-              note: next[it.appointmentId].note ?? (it.note || ""),
-              noteSaved: next[it.appointmentId].noteSaved ?? (it.note || "").trim(),
-            };
-          }
-        });
-        return next;
-      });
-
-      setActiveAppointmentId((prevActive) => {
-        if (prevActive && filtered.some((x) => x.appointmentId === prevActive)) return prevActive;
-        const preferred =
-          filtered.find((x) => x.status === "checked_in") ??
-          filtered.find((x) => x.status === "arrived") ??
-          filtered.find((x) => x.status === "confirmed") ??
-          filtered[0];
-        return preferred?.appointmentId ?? "";
-      });
+      setSessions(s);
     });
     return () => { cancelled = true; };
   }, [patient.id]);
+
+  useEffect(() => {
+    let alive = true;
+    getCalendarResources("staff-doctor").then((r) => alive && setDoctors(r)).catch(() => {});
+    getCalendarResources("staff-technician").then((r) => alive && setTherapists(r)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   async function saveProto() {
     setSavingProto(true);
@@ -160,76 +94,17 @@ export default function TechnicianPatientDetail({
     }
   }
 
-  function updateDraft(appointmentId: string, patch: Partial<SessionDraft>) {
-    setDraftByAppointmentId((prev) => ({
-      ...prev,
-      [appointmentId]: { ...(prev[appointmentId] ?? emptyDraft()), ...patch },
-    }));
-  }
-
-  function onPick(appointmentId: string, e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setDraftByAppointmentId((prev) => {
-      const cur = prev[appointmentId] ?? emptyDraft();
-      return {
-        ...prev,
-        [appointmentId]: {
-          ...cur,
-          added: [...cur.added, ...files.map((f) => ({ file: f, url: URL.createObjectURL(f) }))],
-        },
-      };
-    });
-    e.target.value = "";
-  }
-
-  async function saveActiveSession() {
-    if (!activeSession || !activeDraft) return;
-    updateDraft(activeSession.appointmentId, { saving: true });
-    try {
-      const photos = await Promise.all(activeDraft.added.map((a) => fileToBase64(a.file)));
-      const res = await saveSessionRecord({
-        appointmentId: activeSession.appointmentId,
-        note: activeDraft.note.trim(),
-        photos,
-      });
-      if (res.success) {
-        setSessions((prev) =>
-          (prev ?? []).map((s) =>
-            s.appointmentId === activeSession.appointmentId
-              ? { ...s, note: activeDraft.note.trim(), photos: res.photos }
-              : s,
-          ),
-        );
-        setDraftByAppointmentId((prev) => ({
-          ...prev,
-          [activeSession.appointmentId]: {
-            ...prev[activeSession.appointmentId],
-            note: activeDraft.note.trim(),
-            noteSaved: activeDraft.note.trim(),
-            added: [],
-            saving: false,
-          },
-        }));
-        onSaved("Đã lưu buổi");
-      }
-    } finally {
-      updateDraft(activeSession.appointmentId, { saving: false });
-    }
-  }
-
   function handleBack() {
     if (!anyDirty) return onBack();
     setShowDiscard(true);
   }
 
-  const canSave = protocolDirty || activeSessionDirty;
-  const savingAny = savingProto || !!activeDraft?.saving;
+  const canSave = protocolDirty;
+  const savingAny = savingProto;
 
   async function saveAll() {
     if (!canSave || savingAny) return;
     if (protocolDirty) await saveProto();
-    if (activeSessionDirty) await saveActiveSession();
   }
 
   const [showComplete, setShowComplete] = useState(false);
@@ -294,7 +169,7 @@ export default function TechnicianPatientDetail({
             (care_status / mức hài lòng) không hiện ở đây. */}
         <CareStatusEditor customerId={patient.id} only={TECHNICIAN_TAGS} />
 
-        {/* Phác đồ tổng — nhập theo 4 field cấu trúc, lưu gộp thành text; xem ở dạng có mục + icon. */}
+        {/* Phác đồ tổng — nhập theo form cấu trúc, lưu gộp thành text để CSKH/CEP đọc chung. */}
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
             <ClipboardList size={17} className="text-brand-600" /> Phác đồ tổng
@@ -318,69 +193,64 @@ export default function TechnicianPatientDetail({
 
           {editingProto || !savedProtocol ? (
             <div className="space-y-3">
-              {PROTO_FIELDS.map((f) => (
-                <div key={f.key}>
-                  <label className={`mb-1 flex items-center gap-1.5 text-[12.5px] font-bold ${f.tint}`}>
-                    <f.icon size={14} /> {f.label}
-                  </label>
-                  <textarea
-                    value={fields[f.key]}
-                    onChange={(e) => setField(f.key, e.target.value)}
-                    rows={f.rows}
-                    placeholder={f.ph}
-                    className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13.5px] leading-relaxed outline-none placeholder:text-slate-400 focus:border-brand-400 focus:bg-white"
-                  />
-                </div>
-              ))}
+              <ProtoInput
+                label="Tên liệu trình"
+                required
+                value={fields.tenLieuTrinh}
+                onChange={(v) => setField("tenLieuTrinh", v)}
+                placeholder="Tên liệu trình / gói buổi"
+              />
+              <ProtoInput
+                label="Giá gói"
+                required
+                value={fields.giaGoi}
+                onChange={(v) => setField("giaGoi", v)}
+                placeholder="Ví dụ: 48.000.000"
+              />
+              <div className="grid grid-cols-2 gap-2.5">
+                <ProtoSelect
+                  label="Bác sĩ"
+                  required
+                  value={fields.bacSi}
+                  onChange={(v) => setField("bacSi", v)}
+                  options={doctors.map((x) => x.name)}
+                  placeholder="Chọn bác sĩ"
+                />
+                <ProtoSelect
+                  label="ĐTV"
+                  required
+                  value={fields.dtv}
+                  onChange={(v) => setField("dtv", v)}
+                  options={therapists.map((x) => x.name)}
+                  placeholder="Chọn ĐTV"
+                />
+              </div>
+              <ProtoInput
+                label="Mỹ phẩm dự kiến"
+                value={fields.myPham}
+                onChange={(v) => setField("myPham", v)}
+                placeholder="Sản phẩm / mỹ phẩm dự kiến"
+              />
+              <ProtoInput
+                label="Tình trạng / mục tiêu"
+                value={fields.tinhTrangMucTieu}
+                onChange={(v) => setField("tinhTrangMucTieu", v)}
+                placeholder="Tình trạng hiện tại và mục tiêu sau liệu trình"
+                rows={3}
+              />
+              <ProtoInput
+                label="Note thêm cho CSKH"
+                value={fields.noteCskh}
+                onChange={(v) => setField("noteCskh", v)}
+                placeholder="Thông tin cần CSKH lưu ý khi chăm khách"
+                rows={3}
+              />
               {protocolDirty && (
                 <div className="text-[12px] font-medium text-amber-600">Có thay đổi chưa lưu</div>
               )}
             </div>
           ) : (
             <ProtocolView text={savedProtocol} />
-          )}
-        </div>
-
-        {/* Nhật ký từng buổi */}
-        <div>
-          <div className="mb-2 flex items-center gap-2 px-1 text-[13px] font-bold text-slate-500">
-            <CalendarClock size={16} /> Nhật ký từng buổi
-          </div>
-          {sessions === null ? (
-            <div className="flex justify-center py-10 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
-          ) : sessions.length === 0 ? (
-            <div className="rounded-2xl bg-white py-10 text-center text-[13.5px] text-slate-400 shadow-sm">
-              Chưa có buổi nào được phân cho bạn.
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {sessions.map((s, idx) => {
-                const d = draftByAppointmentId[s.appointmentId] ?? emptyDraft();
-                const dirty = d.note.trim() !== d.noteSaved.trim() || d.added.length > 0;
-                const displayNumber = s.sessionNumber ?? idx + 1;
-                return (
-                  <SessionItem
-                    key={s.appointmentId}
-                    session={s}
-                    displayNumber={displayNumber}
-                    open={s.appointmentId === activeAppointmentId}
-                    dirty={dirty}
-                    noteDraft={d.note}
-                    added={d.added}
-                    saving={d.saving}
-                    onToggle={() =>
-                      setActiveAppointmentId((cur) => (cur === s.appointmentId ? "" : s.appointmentId))
-                    }
-                    onChangeNote={(v) => updateDraft(s.appointmentId, { note: v })}
-                    onPick={(e) => onPick(s.appointmentId, e)}
-                    onRemoveAdded={(idx) =>
-                      updateDraft(s.appointmentId, { added: d.added.filter((_, i) => i !== idx) })
-                    }
-                    onViewPhoto={setLightbox}
-                  />
-                );
-              })}
-            </div>
           )}
         </div>
       </div>
@@ -460,193 +330,157 @@ export default function TechnicianPatientDetail({
         </div>
       )}
 
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4"
-          onClick={() => setLightbox(null)}
-        >
-          <button
-            type="button"
-            aria-label="Đóng"
-            onClick={() => setLightbox(null)}
-            className="absolute right-4 top-4 rounded-full bg-white/15 p-2 text-white hover:bg-white/25"
-          >
-            <X size={22} />
-          </button>
-          <img
-            src={lightbox}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full rounded-lg object-contain"
-          />
-        </div>
-      )}
     </div>
   );
 }
 
-type AddedPhoto = { file: File; url: string };
-
-type SessionDraft = {
-  note: string;
-  noteSaved: string;
-  added: AddedPhoto[];
-  saving: boolean;
+// ---- Form phác đồ có cấu trúc, gộp thành text `Nhãn: value` khi lưu (backend giữ 1 cột) ----
+type ProtoFields = {
+  tenLieuTrinh: string;
+  giaGoi: string;
+  bacSi: string;
+  dtv: string;
+  myPham: string;
+  tinhTrangMucTieu: string;
+  noteCskh: string;
 };
-
-function emptyDraft(): SessionDraft {
-  return { note: "", noteSaved: "", added: [], saving: false };
+const PROTO_ORDER: { key: keyof ProtoFields; label: string }[] = [
+  { key: "tenLieuTrinh", label: "Tên liệu trình" },
+  { key: "giaGoi", label: "Giá gói" },
+  { key: "bacSi", label: "Bác sĩ" },
+  { key: "dtv", label: "ĐTV" },
+  { key: "myPham", label: "Mỹ phẩm dự kiến" },
+  { key: "tinhTrangMucTieu", label: "Tình trạng / mục tiêu" },
+  { key: "noteCskh", label: "Note thêm cho CSKH" },
+];
+function emptyFields(): ProtoFields {
+  return { tenLieuTrinh: "", giaGoi: "", bacSi: "", dtv: "", myPham: "", tinhTrangMucTieu: "", noteCskh: "" };
 }
 
-// ---- Form phác đồ có cấu trúc: 4 field, gộp thành text `Nhãn: value` khi lưu (backend giữ 1 cột) ----
-type ProtoFields = { tinhtrang: string; muctieu: string; congnghe: string; luuy: string };
-const PROTO_FIELDS: { key: keyof ProtoFields; label: string; icon: LucideIcon; tint: string; rows: number; ph: string }[] = [
-  { key: "tinhtrang", label: "Tình trạng", icon: Stethoscope, tint: "text-brand-600", rows: 2, ph: "Tình trạng da hiện tại, chẩn đoán…" },
-  { key: "muctieu", label: "Mục tiêu", icon: Target, tint: "text-emerald-600", rows: 2, ph: "Kết quả mong muốn sau liệu trình…" },
-  { key: "congnghe", label: "Công nghệ", icon: Settings2, tint: "text-sky-600", rows: 2, ph: "Máy/công nghệ, sản phẩm dự kiến…" },
-  { key: "luuy", label: "Lưu ý", icon: AlertTriangle, tint: "text-amber-600", rows: 3, ph: "Kiêng cữ, chống chỉ định, giãn cách, dặn dò…" },
-];
-function emptyFields(): ProtoFields { return { tinhtrang: "", muctieu: "", congnghe: "", luuy: "" }; }
-
-// text đã lưu -> tách về 4 field (đoạn không nhãn = Tình trạng; nhãn lạ/Giãn cách dồn vào Lưu ý).
+// text đã lưu -> tách về field mới; nhãn cũ được map sang nhóm gần nhất để không mất dữ liệu.
 function protocolToFields(text: string): ProtoFields {
   const f = emptyFields();
   const keyOf = (name: string): keyof ProtoFields => {
     const n = normLabel(name);
-    if (["tinh trang", "chan doan", "hien trang", "da"].some((k) => n.startsWith(k))) return "tinhtrang";
-    if (["muc tieu", "ket qua", "mong muon"].some((k) => n.startsWith(k))) return "muctieu";
-    if (["cong nghe", "may", "thiet bi", "san pham", "phuong phap"].some((k) => n.startsWith(k))) return "congnghe";
-    return "luuy"; // lưu ý + mọi nhãn khác
+    if (n.startsWith("ten lieu trinh") || n.startsWith("lieu trinh")) return "tenLieuTrinh";
+    if (n.startsWith("gia goi") || n.startsWith("gia")) return "giaGoi";
+    if (n.startsWith("bac si") || n.startsWith("bs")) return "bacSi";
+    if (n.startsWith("dtv") || n.startsWith("dieu tri vien") || n.startsWith("ky thuat vien")) return "dtv";
+    if (n.startsWith("my pham") || ["cong nghe", "may", "thiet bi", "san pham", "phuong phap"].some((k) => n.startsWith(k))) return "myPham";
+    if (n.startsWith("tinh trang / muc tieu") || ["tinh trang", "chan doan", "hien trang", "da", "muc tieu", "ket qua", "mong muon"].some((k) => n.startsWith(k))) return "tinhTrangMucTieu";
+    return "noteCskh";
   };
   for (const b of parseProtocol(text)) {
     const content = b.lines.join("\n").trim();
     if (!content) continue;
-    const key = b.icon ? keyOf(b.name || "") : "tinhtrang"; // không nhãn -> Tình trạng
+    const key = b.name ? keyOf(b.name) : "tinhTrangMucTieu";
     f[key] = f[key] ? f[key] + "\n" + content : content;
   }
   return f;
 }
 
-// 4 field -> text `Nhãn: value` (bỏ field trống) để read-mode parse lại đúng.
+// Field -> text `Nhãn: value` (bỏ field trống) để read-mode parse lại đúng.
 function fieldsToProtocol(f: ProtoFields): string {
-  return PROTO_FIELDS.filter((x) => f[x.key].trim())
+  return PROTO_ORDER.filter((x) => f[x.key].trim())
     .map((x) => `${x.label}: ${f[x.key].trim()}`)
     .join("\n");
 }
 
-function buildPreview(session: Session): string {
-  const note = (session.note || "").trim();
-  if (note) return note.length > 70 ? note.slice(0, 70) + "…" : note;
-  if ((session.photos?.length ?? 0) > 0) return "Có ảnh trước / sau";
-  return "Chưa có nhật ký";
+function ProtoInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+  rows = 1,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  required?: boolean;
+  rows?: number;
+}) {
+  const cls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13.5px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:bg-white";
+  return (
+    <div>
+      <label className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}{required ? " *" : ""}</label>
+      {rows > 1 ? (
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} placeholder={placeholder} className={`${cls} resize-y`} />
+      ) : (
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cls} />
+      )}
+    </div>
+  );
 }
 
-function SessionItem({
-  session,
-  displayNumber,
-  open,
-  dirty,
-  noteDraft,
-  added,
-  saving,
-  onToggle,
-  onChangeNote,
-  onPick,
-  onRemoveAdded,
-  onViewPhoto,
+function ProtoSelect({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  required,
 }: {
-  session: Session;
-  displayNumber: number;
-  open: boolean;
-  dirty: boolean;
-  noteDraft: string;
-  added: AddedPhoto[];
-  saving: boolean;
-  onToggle: () => void;
-  onChangeNote: (v: string) => void;
-  onPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveAdded: (idx: number) => void;
-  onViewPhoto: (url: string) => void;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  required?: boolean;
 }) {
-  const st = STATUS[session.status] ?? { label: session.status || "—", cls: "bg-slate-100 text-slate-500" };
-  const preview = buildPreview(session);
+  const [open, setOpen] = useState(false);
+  const shownOptions = value && !options.includes(value) ? [value, ...options] : options;
 
   return (
-    <div className={`overflow-hidden rounded-2xl bg-white shadow-sm ${open ? "ring-1 ring-brand-200" : ""}`}>
-      <button onClick={onToggle} className="flex w-full items-start gap-3 p-3.5 text-left">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-[13px] font-bold text-brand-600">
-          B{displayNumber}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[14px] font-semibold text-slate-800">
-              Buổi {displayNumber}
-            </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${st.cls}`}>{st.label}</span>
-            {dirty && (
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-600">
-                Chưa lưu
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 text-[12px] text-slate-400">{fmtDate(session.dateIso)}</div>
-          {!open && <div className="mt-1 truncate text-[12.5px] text-slate-500">{preview}</div>}
-        </div>
-        <ChevronDown size={18} className={`mt-1 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <label className="mb-1.5 block text-[12px] font-bold text-slate-600">{label}{required ? " *" : ""}</label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex w-full items-center gap-2 rounded-xl border bg-slate-50 px-3 py-2.5 text-left text-[13.5px] outline-none transition ${
+          open ? "border-brand-400 bg-white ring-2 ring-brand-100" : "border-slate-200 text-slate-800"
+        }`}
+      >
+        <span className={`min-w-0 flex-1 truncate ${value ? "text-slate-800" : "text-slate-500"}`}>
+          {value || placeholder}
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 p-3.5">
-          <textarea
-            value={noteDraft}
-            onChange={(e) => onChangeNote(e.target.value)}
-            rows={3}
-            placeholder="Thao tác đã làm, máy/thông số, sản phẩm, phản ứng da, dặn dò…"
-            className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13.5px] leading-relaxed outline-none placeholder:text-slate-400 focus:border-brand-400 focus:bg-white"
-          />
-
-          <div className="mt-3">
-            <div className="mb-2 text-[12px] font-semibold text-slate-500">Ảnh trước / sau của buổi</div>
-            <div className="flex flex-wrap gap-2">
-              {(session.photos || []).map((url, i) => (
-                <button
-                  type="button"
-                  key={"e" + i}
-                  onClick={() => onViewPhoto(url)}
-                  aria-label={`Xem ảnh ${i + 1}`}
-                  className="h-20 w-20 cursor-zoom-in overflow-hidden rounded-xl border border-slate-200"
-                >
-                  <img src={url} alt="" className="h-full w-full object-cover" />
-                </button>
-              ))}
-              {added.map((p, i) => (
-                <div key={"a" + i} className="relative h-20 w-20 overflow-hidden rounded-xl border border-brand-300">
-                  <img
-                    src={p.url}
-                    alt={p.file.name}
-                    onClick={() => onViewPhoto(p.url)}
-                    className="h-full w-full cursor-zoom-in object-cover"
-                  />
-                  <button
-                    onClick={() => onRemoveAdded(i)}
-                    className="absolute right-0.5 top-0.5 rounded-full bg-black/55 p-0.5 text-white"
-                  ><X size={13} /></button>
-                  <span className="absolute bottom-0 left-0 right-0 bg-brand-500/90 text-center text-[9px] font-bold text-white">mới</span>
-                </div>
-              ))}
-              <label className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 hover:border-brand-400 hover:text-brand-500">
-                <ImagePlus size={20} />
-                <span className="text-[11px] font-semibold">Thêm ảnh</span>
-                <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={onPick} />
-              </label>
-            </div>
-          </div>
-
-          {(saving || dirty) && (
-            <div className={`mt-2 text-[12px] font-medium ${saving ? "text-slate-400" : "text-amber-600"}`}>
-              {saving ? "Đang lưu…" : "Có thay đổi chưa lưu"}
-            </div>
-          )}
+        <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/10">
+          <button
+            type="button"
+            onClick={() => { onChange(""); setOpen(false); }}
+            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13.5px] font-semibold transition ${
+              !value ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            {placeholder}
+            {!value && <Check size={14} />}
+          </button>
+          {shownOptions.map((o) => {
+            const selected = value === o;
+            return (
+              <button
+                key={o}
+                type="button"
+                onClick={() => { onChange(o); setOpen(false); }}
+                className={`mt-0.5 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13.5px] font-semibold transition ${
+                  selected ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className="min-w-0 truncate">{o}</span>
+                {selected && <Check size={14} className="shrink-0" />}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

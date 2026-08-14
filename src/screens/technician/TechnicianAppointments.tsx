@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Loader2, Search, Stethoscope, Tag, UserRound } from "lucide-react";
-import { fetchTechnicianAppointments, type TechnicianAppointment } from "../../lib/technician";
+import { CalendarDays, Loader2, MapPin, MonitorCog, Search, Tag } from "lucide-react";
+import { fetchTechnicianAppointments, type AppointmentResource, type TechnicianAppointment } from "../../lib/technician";
 import { chipStyle } from "../../lib/chipColor";
 
 // Nhãn + màu trạng thái buổi (khuôn lấy từ CustomerCareBook, thêm cancelled/no_show
@@ -26,6 +26,14 @@ const FILTERS: { key: string; label: string; match: string[] | null }[] = [
 ];
 
 const WEEKDAYS_SHORT_VI = ["CN", "T.Hai", "T.Ba", "T.Tư", "T.Năm", "T.Sáu", "T.Bảy"];
+const ROLE_LABELS: Record<string, string> = {
+  main: "ĐTV",
+  primary_staff: "ĐTV",
+  primary_room: "Phòng",
+  doctor: "BS",
+  equipment: "Máy",
+  assistant: "Trợ lý",
+};
 
 function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -40,6 +48,24 @@ function shiftIso(iso: string, days: number): string {
 function formatHm(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function resourceLabel(r: AppointmentResource): string {
+  return ROLE_LABELS[r.role] || r.resourceTypeName || r.role || "Tài nguyên";
+}
+
+function resourceTone(r: AppointmentResource): string {
+  const s = (r.resourceTypeSlug || r.role || "").toLowerCase();
+  if (s.includes("doctor")) return "bg-sky-50 text-sky-600";
+  if (s.includes("room")) return "bg-indigo-50 text-indigo-600";
+  if (s.includes("equipment") || s.includes("machine")) return "bg-amber-50 text-amber-600";
+  if (s.includes("assistant")) return "bg-violet-50 text-violet-600";
+  return "bg-slate-100 text-slate-500";
+}
+
+function isRoomResource(r: AppointmentResource): boolean {
+  const s = `${r.resourceTypeSlug} ${r.role} ${r.resourceTypeName}`.toLowerCase();
+  return s.includes("room") || s.includes("phòng") || s.includes("phong");
 }
 
 // Dải 7 ngày bắt đầu từ `anchor`; nhãn tương đối so với hôm nay.
@@ -69,13 +95,16 @@ export default function TechnicianAppointments() {
   // Dải ngày bắt đầu từ hôm trước ngày đang chọn -> ngày chọn luôn nằm trong dải.
   const [anchor, setAnchor] = useState(() => shiftIso(rememberedDate || localTodayIso(), -1));
   const [items, setItems] = useState<TechnicianAppointment[] | null>(null);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [view, setView] = useState<"time" | "resource">("time");
   const [q, setQ] = useState("");
 
   // Đổi ngày: xoá list ngay để hiện spinner (không setState trong effect) + nhớ ngày.
   const pickDate = (iso: string) => {
     rememberedDate = iso;
     setItems(null);
+    setError("");
     setDate(iso);
   };
 
@@ -83,8 +112,18 @@ export default function TechnicianAppointments() {
     let cancelled = false;
     const load = (silent: boolean) =>
       fetchTechnicianAppointments(date, date)
-        .then((list) => { if (!cancelled) setItems(list); })
-        .catch(() => { if (!cancelled && !silent) setItems([]); });
+        .then((list) => {
+          if (!cancelled) {
+            setError("");
+            setItems(list);
+          }
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          const msg = e instanceof Error ? e.message : "Không tải được lịch hẹn.";
+          setError(msg);
+          if (!silent) setItems([]);
+        });
     load(false);
     // Live: push đến (SW) / app hiện lại -> refetch tại chỗ (không spinner).
     const refresh = () => { load(true); };
@@ -113,6 +152,87 @@ export default function TechnicianAppointments() {
     const term = q.trim().toLowerCase();
     return !term || (a.customerName + " " + a.customerPhone).toLowerCase().includes(term);
   });
+
+  const resourceGroups = useMemo(() => {
+    const m = new Map<string, { resource: AppointmentResource | null; appointments: TechnicianAppointment[] }>();
+    for (const a of filtered) {
+      const rooms = (a.resources ?? []).filter(isRoomResource);
+      const resources = rooms.length ? rooms : [null];
+      for (const r of resources) {
+        const key = r?.resourceId ?? "__missing";
+        const cur = m.get(key) ?? { resource: r, appointments: [] };
+        cur.appointments.push(a);
+        m.set(key, cur);
+      }
+    }
+    return [...m.values()].sort((a, b) => {
+      const an = a.resource ? `${resourceLabel(a.resource)} ${a.resource.resourceName}` : "zz";
+      const bn = b.resource ? `${resourceLabel(b.resource)} ${b.resource.resourceName}` : "zz";
+      return an.localeCompare(bn, "vi");
+    });
+  }, [filtered]);
+
+  function AppointmentCard({ a, compact = false }: { a: TechnicianAppointment; compact?: boolean }) {
+    const meta = STATUS_META[a.status] ?? { label: a.status || "—", cls: "bg-slate-100 text-slate-500" };
+    const off = a.status === "cancelled" || a.status === "no_show";
+    return (
+      <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <button
+          onClick={() => navigate(`/technician/patient/${a.customerId}`)}
+          className="flex w-full items-start gap-3 p-3.5 text-left"
+        >
+          <span className="w-[52px] shrink-0 pt-0.5">
+            <span className={`block text-[15px] font-bold ${off ? "text-slate-400 line-through" : "text-slate-800"}`}>
+              {formatHm(a.startAtIso)}
+            </span>
+            {a.sessionNumber != null && (
+              <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">
+                Buổi {a.sessionNumber}{a.sessionTotal > 0 ? `/${a.sessionTotal}` : ""}
+              </span>
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-[15px] font-bold text-slate-800">{a.customerName}</span>
+              {a.tierName && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                  style={chipStyle(a.tierColor)}
+                >
+                  <Tag size={11} /> {a.tierName}
+                </span>
+              )}
+              <span className={`ml-auto shrink-0 rounded-lg px-1.5 py-0.5 text-[11px] font-bold ${meta.cls}`}>
+                {meta.label}
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-[12.5px] text-slate-500">
+              {[a.branchName, a.serviceName].filter(Boolean).join(" · ") || "—"}
+            </span>
+            {!compact && a.resources?.length > 0 && (
+              <span className="mt-2 flex flex-wrap gap-1.5">
+                {a.resources.map((r) => (
+                  <span
+                    key={`${a.appointmentId}-${r.resourceId}-${r.role}`}
+                    className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${resourceTone(r)}`}
+                  >
+                    {r.resourceTypeSlug.includes("room") || r.role.includes("room") ? <MapPin size={11} /> : <MonitorCog size={11} />}
+                    <span className="shrink-0">{resourceLabel(r)}:</span>
+                    <span className="truncate">{r.resourceName}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+            {!compact && (!a.resources || a.resources.length === 0) && (
+              <span className="mt-2 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-500">
+                Chưa gán tài nguyên
+              </span>
+            )}
+          </span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-[#eef0f5]">
@@ -164,6 +284,21 @@ export default function TechnicianAppointments() {
           />
         </div>
 
+        <div className="mt-3 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+              {([["time", "Theo giờ"], ["resource", "Theo phòng"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`rounded-lg py-2 text-[12.5px] font-bold transition-colors ${
+                view === key ? "bg-white text-brand-600 shadow-sm" : "text-slate-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="-mx-5 mt-3.5 flex snap-x scroll-px-5 gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((f) => {
             const on = f.key === filter;
@@ -187,67 +322,39 @@ export default function TechnicianAppointments() {
       </header>
 
       <div className="space-y-2.5 px-5 py-4">
-        {items === null ? (
+        {error ? (
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-[13px] font-semibold text-rose-600">
+            {error}
+          </div>
+        ) : items === null ? (
           <div className="flex justify-center py-16 text-slate-400"><Loader2 size={26} className="animate-spin" /></div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-[13.5px] text-slate-400">
             {items.length === 0 ? "Ngày này chưa có lịch hẹn nào." : "Không có lịch hẹn phù hợp."}
           </div>
+        ) : view === "time" ? (
+          filtered.map((a) => <AppointmentCard key={a.appointmentId} a={a} />)
         ) : (
-          filtered.map((a) => {
-            const meta = STATUS_META[a.status] ?? { label: a.status || "—", cls: "bg-slate-100 text-slate-500" };
-            const off = a.status === "cancelled" || a.status === "no_show";
-            return (
-              // Bọc div ngoài, button trong — không lồng button vào button.
-              <div key={a.appointmentId} className="rounded-2xl border border-slate-100 bg-white shadow-sm">
-                <button
-                  onClick={() => navigate(`/technician/patient/${a.customerId}`)}
-                  className="flex w-full items-start gap-3 p-3.5 text-left"
-                >
-                  <span className="w-[52px] shrink-0 pt-0.5">
-                    <span className={`block text-[15px] font-bold ${off ? "text-slate-400 line-through" : "text-slate-800"}`}>
-                      {formatHm(a.startAtIso)}
-                    </span>
-                    {a.sessionNumber != null && (
-                      <span className="mt-0.5 block text-[11px] font-semibold text-slate-400">
-                        Buổi {a.sessionNumber}{a.sessionTotal > 0 ? `/${a.sessionTotal}` : ""}
-                      </span>
-                    )}
+          <div className="space-y-3">
+            {resourceGroups.map((g) => (
+              <section key={g.resource?.resourceId ?? "__missing"} className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold ${
+                    g.resource ? resourceTone(g.resource) : "bg-rose-50 text-rose-500"
+                  }`}>
+                    {g.resource ? "Phòng" : "Chưa gán"}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-[15px] font-bold text-slate-800">{a.customerName}</span>
-                      {/* Phân loại KH — chỉ HIỂN THỊ; sửa ở màn chi tiết khách. */}
-                      {a.tierName && (
-                        <span
-                          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
-                          style={chipStyle(a.tierColor)}
-                        >
-                          <Tag size={11} /> {a.tierName}
-                        </span>
-                      )}
-                      <span className={`ml-auto shrink-0 rounded-lg px-1.5 py-0.5 text-[11px] font-bold ${meta.cls}`}>
-                        {meta.label}
-                      </span>
-                    </span>
-                    <span className="mt-0.5 block truncate text-[12.5px] text-slate-500">
-                      {[a.branchName, a.serviceName].filter(Boolean).join(" · ") || "—"}
-                    </span>
-                    {(a.therapistName || a.doctorName) && (
-                      <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-400">
-                        {a.therapistName && (
-                          <span className="inline-flex items-center gap-1"><UserRound size={12} /> {a.therapistName}</span>
-                        )}
-                        {a.doctorName && (
-                          <span className="inline-flex items-center gap-1"><Stethoscope size={12} /> {a.doctorName}</span>
-                        )}
-                      </span>
-                    )}
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-slate-700">
+                    {g.resource?.resourceName ?? "Chưa gán phòng"}
                   </span>
-                </button>
-              </div>
-            );
-          })
+                  <span className="text-[11.5px] font-semibold text-slate-400">{g.appointments.length} lịch</span>
+                </div>
+                <div className="space-y-2">
+                  {g.appointments.map((a) => <AppointmentCard key={`${g.resource?.resourceId ?? "missing"}-${a.appointmentId}`} a={a} compact />)}
+                </div>
+              </section>
+            ))}
+          </div>
         )}
       </div>
 

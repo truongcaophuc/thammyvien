@@ -80,6 +80,7 @@ export default function CustomerCareBook({
   const [care, setCare] = useState<CareTreatment | null>(null);
   const [note, setNote] = useState("");        // note CSKH theo liệu trình
   const [noteBusy, setNoteBusy] = useState(false);
+  const [protocolOpen, setProtocolOpen] = useState(true);
   const [careOpen, setCareOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [openSessions, setOpenSessions] = useState<Set<string>>(() => new Set());
@@ -342,6 +343,30 @@ export default function CustomerCareBook({
         {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
         <CustomerProfileCard customerId={patient.id} />
 
+        {/* Phác đồ tổng — CSKH xem cùng cấu trúc form Trợ lý nhập. */}
+        {care && (
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+            <button
+              type="button"
+              onClick={() => setProtocolOpen((o) => !o)}
+              className="flex w-full items-center gap-2 p-4 text-left"
+            >
+              <ClipboardList size={17} className="text-brand-600" />
+              <span className="text-[14px] font-bold text-slate-800">Phác đồ tổng</span>
+              <ChevronDown size={18} className={`ml-auto shrink-0 text-slate-400 transition-transform ${protocolOpen ? "rotate-180" : ""}`} />
+            </button>
+            {protocolOpen && (
+              <div className="border-t border-slate-100 p-4">
+                {care.protocol ? (
+                  <ProtocolView text={care.protocol} />
+                ) : (
+                  <div className="text-[12.5px] text-slate-400">Chưa có phác đồ tổng.</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Note CSKH — theo LIỆU TRÌNH đang chạy, dùng chung ô với màn CEP. */}
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
@@ -371,8 +396,8 @@ export default function CustomerCareBook({
           )}
         </div>
 
-        {/* Hồ sơ điều trị — CSKH xem để đặt lịch có ngữ cảnh, và sửa buổi (CV-14) */}
-        {care && (care.protocol || care.sessions.length > 0) && (
+        {/* Hồ sơ điều trị — CSKH xem lịch sử buổi và sửa buổi (CV-14) */}
+        {care && care.sessions.length > 0 && (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
             <button onClick={() => setCareOpen((o) => !o)} className="flex w-full items-center gap-2 p-4 text-left">
               <ClipboardList size={17} className="text-brand-600" />
@@ -382,14 +407,6 @@ export default function CustomerCareBook({
             </button>
             {careOpen && (
               <div className="space-y-3 border-t border-slate-100 p-4">
-                <div>
-                  <div className="mb-1.5 text-[12px] font-bold text-slate-500">Phác đồ tổng</div>
-                  {care.protocol ? (
-                    <ProtocolView text={care.protocol} />
-                  ) : (
-                    <div className="text-[12.5px] text-slate-400">Chưa có phác đồ tổng.</div>
-                  )}
-                </div>
                 {care.sessions.length > 0 && (
                   <div>
                     <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-500">
