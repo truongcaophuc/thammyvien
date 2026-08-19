@@ -16,7 +16,7 @@ export class ApiError extends Error {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
-async function tryRefresh(): Promise<boolean> {
+export async function refreshAuthSession(): Promise<boolean> {
   // Single-flight: nhiều request 401 đồng thời chỉ refresh 1 lần
   if (refreshInFlight) return refreshInFlight;
 
@@ -61,7 +61,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
 
   // 401 → thử refresh 1 lần rồi retry. Bỏ qua nếu chính endpoint refresh/login.
   if (res.status === 401 && !skipAuthRetry) {
-    const refreshed = await tryRefresh();
+    const refreshed = await refreshAuthSession();
     if (refreshed) {
       res = await fetch(`${API_BASE_URL}${path}`, init);
     }

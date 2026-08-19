@@ -1,6 +1,6 @@
 // Lightweight GraphQL client — fetch wrapper, không cần Apollo/urql.
 // Cookie tự gửi qua credentials: 'include' nhờ HttpOnly cookie BE set.
-import { api } from "./api";
+import { api, refreshAuthSession } from "./api";
 
 interface GraphQLResponse<T> {
   data?: T;
@@ -30,13 +30,23 @@ export async function gql<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
-  const res = await api<GraphQLResponse<T>>("/graphql", {
+  const request = () => api<GraphQLResponse<T>>("/graphql", {
     method: "POST",
     body: { query, variables },
   });
 
+  let res = await request();
+
   if (res.errors && res.errors.length > 0) {
     if (res.errors.some((e) => e.extensions?.code === UNAUTHENTICATED)) {
+      const refreshed = await refreshAuthSession();
+      if (refreshed) {
+        res = await request();
+        if (!res.errors || res.errors.length === 0) {
+          if (!res.data) throw new Error("GraphQL response không có data");
+          return res.data;
+        }
+      }
       goLogin();
       throw new Error("Phiên đăng nhập đã hết hạn");
     }
