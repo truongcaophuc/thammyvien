@@ -28,7 +28,14 @@ export default function TechnicianPatientDetail({
   onBack: () => void;
   onSaved: (msg: string) => void;
 }) {
-  const [fields, setFields] = useState<ProtoFields>(() => protocolToFields(patient.protocol || ""));
+  const initialProtocolFields = useMemo(() => protocolToFields(patient.protocol || ""), [patient.protocol]);
+  const [fields, setFields] = useState<ProtoFields>(() => initialProtocolFields.fields);
+  const [packagePrice, setPackagePrice] = useState(() =>
+    patient.packagePrice ? fmtMoney(patient.packagePrice) : initialProtocolFields.legacyPackagePrice,
+  );
+  const [savedPackagePrice, setSavedPackagePrice] = useState(() =>
+    patient.packagePrice ? fmtMoney(patient.packagePrice) : initialProtocolFields.legacyPackagePrice,
+  );
   const [savedProtocol, setSavedProtocol] = useState((patient.protocol || "").trim());
   const [savingProto, setSavingProto] = useState(false);
   const [editingProto, setEditingProto] = useState(false); // read-mode có format; bấm "Sửa" mới về form 4 field
@@ -50,7 +57,7 @@ export default function TechnicianPatientDetail({
   const [savedRecordings, setSavedRecordings] = useState<string[]>([]);
   const [formMsg, setFormMsg] = useState("");
   const hasCareAgent = !!patient.careAgentId || !!patient.careAgentName;
-  const showCareAgentInDeal = patient.dealStatus === "closed" && hasCareAgent;
+  const showCareAgentInDeal = hasCareAgent;
   const lockDealChoice = patient.dealStatus === "closed";
   const dealDirty =
     deal !== (patient.dealStatus ?? null) ||
@@ -65,11 +72,12 @@ export default function TechnicianPatientDetail({
   const protocolText = useMemo(() => fieldsToProtocol(fields), [fields]);
   // So dirty THEO FIELD (không so text thô): round-trip parse↔serialize không đồng nhất
   // vì phác đồ cũ có đoạn không nhãn -> gộp lại sẽ thêm "Tình trạng:" => luôn báo "có thay đổi".
-  const savedFields = useMemo(() => protocolToFields(savedProtocol), [savedProtocol]);
+  const savedFields = useMemo(() => protocolToFields(savedProtocol).fields, [savedProtocol]);
   const protocolDirty = useMemo(
     () => (Object.keys(fields) as (keyof ProtoFields)[]).some((k) => fields[k].trim() !== savedFields[k].trim()),
     [fields, savedFields],
   );
+  const packagePriceDirty = packagePrice !== savedPackagePrice;
   const setField = (key: keyof ProtoFields, v: string) => setFields((p) => ({ ...p, [key]: v }));
 
   // Số buổi đã hoàn thành — ưu tiên đếm từ sessions để cập nhật ngay sau khi hoàn thành 1 buổi.
@@ -78,7 +86,7 @@ export default function TechnicianPatientDetail({
     [sessions, patient.sessionDone],
   );
 
-  const anyDirty = protocolDirty || dealDirty;
+  const anyDirty = protocolDirty || packagePriceDirty || dealDirty;
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +118,7 @@ export default function TechnicianPatientDetail({
     setShowDiscard(true);
   }
 
-  const canSave = protocolDirty || dealDirty;
+  const canSave = protocolDirty || packagePriceDirty || dealDirty;
   const savingAny = savingProto;
 
   // Một lần lưu duy nhất: phác đồ + kết quả chốt + công nợ + ghi âm.
@@ -136,14 +144,15 @@ export default function TechnicianPatientDetail({
         dealStatus: dealStatusToSave,
         dealNote: deal === "open" ? dealNote.trim() : undefined,
         recordings: recordings.length ? recordings : undefined,
-        serviceName: closing ? fields.tenLieuTrinh.trim() || undefined : undefined,
-        packagePrice: closing ? parseMoney(fields.giaGoi) : undefined,
-        paidAmount: closing ? (payFull ? parseMoney(fields.giaGoi) : parseMoney(paid)) : undefined,
+        serviceName: fields.tenLieuTrinh.trim() || undefined,
+        packagePrice: parseMoney(packagePrice) ?? undefined,
+        paidAmount: closing ? (payFull ? parseMoney(packagePrice) : parseMoney(paid)) : undefined,
         debtAmount: closing ? (payFull ? 0 : parseMoney(debt)) : undefined,
         nextPaymentDate: closing && !payFull ? nextPay || null : undefined,
       });
       if (res.success) {
         setSavedProtocol(protocolText.trim());
+        setSavedPackagePrice(packagePrice);
         setEditingProto(false); // lưu xong -> quay lại read-mode có format
         setRecordings([]);
         onSaved(
@@ -250,7 +259,7 @@ export default function TechnicianPatientDetail({
             )}
             {savedProtocol && editingProto && (
               <button
-                onClick={() => { setFields(protocolToFields(savedProtocol)); setEditingProto(false); }}
+                onClick={() => { setFields(protocolToFields(savedProtocol).fields); setPackagePrice(savedPackagePrice); setEditingProto(false); }}
                 className="ml-auto rounded-lg px-2 py-1 text-[12px] font-semibold text-slate-400 hover:bg-slate-50 hover:text-slate-600"
               >
                 Hủy
@@ -270,8 +279,10 @@ export default function TechnicianPatientDetail({
               <ProtoInput
                 label="Giá gói"
                 required
-                value={fields.giaGoi}
-                onChange={(v) => setField("giaGoi", v)}
+                value={packagePrice}
+                onChange={(v) => setPackagePrice(moneyDigits(v))}
+                onBlur={() => setPackagePrice(fmtMoneyInput(packagePrice))}
+                inputMode="numeric"
                 placeholder="Ví dụ: 48.000.000"
               />
 
@@ -292,8 +303,8 @@ export default function TechnicianPatientDetail({
                 {!payFull && (
                   <div className="mt-3 space-y-2.5">
                     <div className="grid grid-cols-2 gap-2.5">
-                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(fmtMoneyInput(v))} placeholder="20.000.000" />
-                      <ProtoInput label="Còn nợ" value={debt} onChange={(v) => setDebt(fmtMoneyInput(v))} placeholder="28.000.000" />
+                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(moneyDigits(v))} onBlur={() => setPaid(fmtMoneyInput(paid))} inputMode="numeric" placeholder="20.000.000" />
+                      <ProtoInput label="Còn nợ" value={debt} onChange={(v) => setDebt(moneyDigits(v))} onBlur={() => setDebt(fmtMoneyInput(debt))} inputMode="numeric" placeholder="28.000.000" />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Ngày hẹn trả tiếp *</label>
@@ -357,7 +368,13 @@ export default function TechnicianPatientDetail({
             </div>
           ) : (
             <>
-              <ProtocolView text={savedProtocol} />
+              {savedPackagePrice && (
+                <div className="mb-2.5 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                  <span className="text-[12px] font-bold text-slate-500">Giá gói</span>
+                  <span className="text-[13.5px] font-bold text-slate-800">{savedPackagePrice} đ</span>
+                </div>
+              )}
+              <ProtocolView text={fieldsToProtocol(protocolToFields(savedProtocol).fields)} />
               {/* Công nợ không nằm trong text phác đồ (lưu ở liệu trình) nên phải render riêng ở chế độ xem. */}
               <div className="mt-2.5 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
@@ -440,8 +457,11 @@ function fmtMoney(n: number): string {
 }
 /** Người dùng gõ tới đâu chấm tới đó; giữ chuỗi rỗng khi xoá hết. */
 function fmtMoneyInput(v: string): string {
-  const digits = v.replace(/\D/g, "");
+  const digits = moneyDigits(v);
   return digits ? fmtMoney(Number(digits)) : "";
+}
+function moneyDigits(v: string): string {
+  return (v || "").replace(/\D/g, "");
 }
 /** "48.000.000" -> 48000000; rỗng -> null (backend hiểu là không đổi). */
 function parseMoney(v: string): number | null {
@@ -589,7 +609,6 @@ function RecordBlock({
 // ---- Form phác đồ có cấu trúc, gộp thành text `Nhãn: value` khi lưu (backend giữ 1 cột) ----
 type ProtoFields = {
   tenLieuTrinh: string;
-  giaGoi: string;
   bacSi: string;
   dtv: string;
   myPham: string;
@@ -598,7 +617,6 @@ type ProtoFields = {
 };
 const PROTO_ORDER: { key: keyof ProtoFields; label: string }[] = [
   { key: "tenLieuTrinh", label: "Tên liệu trình" },
-  { key: "giaGoi", label: "Giá gói" },
   { key: "bacSi", label: "Bác sĩ" },
   { key: "dtv", label: "ĐTV" },
   { key: "myPham", label: "Mỹ phẩm" },
@@ -606,16 +624,16 @@ const PROTO_ORDER: { key: keyof ProtoFields; label: string }[] = [
   { key: "noteCskh", label: "Note thêm cho CSKH" },
 ];
 function emptyFields(): ProtoFields {
-  return { tenLieuTrinh: "", giaGoi: "", bacSi: "", dtv: "", myPham: "", tinhTrangMucTieu: "", noteCskh: "" };
+  return { tenLieuTrinh: "", bacSi: "", dtv: "", myPham: "", tinhTrangMucTieu: "", noteCskh: "" };
 }
 
 // text đã lưu -> tách về field mới; nhãn cũ được map sang nhóm gần nhất để không mất dữ liệu.
-function protocolToFields(text: string): ProtoFields {
+function protocolToFields(text: string): { fields: ProtoFields; legacyPackagePrice: string } {
   const f = emptyFields();
+  let legacyPackagePrice = "";
   const keyOf = (name: string): keyof ProtoFields => {
     const n = normLabel(name);
     if (n.startsWith("ten lieu trinh") || n.startsWith("lieu trinh")) return "tenLieuTrinh";
-    if (n.startsWith("gia goi") || n.startsWith("gia")) return "giaGoi";
     if (n.startsWith("bac si") || n.startsWith("bs")) return "bacSi";
     if (n.startsWith("dtv") || n.startsWith("dieu tri vien") || n.startsWith("ky thuat vien")) return "dtv";
     if (n.startsWith("my pham") || ["cong nghe", "may", "thiet bi", "san pham", "phuong phap"].some((k) => n.startsWith(k))) return "myPham";
@@ -625,10 +643,14 @@ function protocolToFields(text: string): ProtoFields {
   for (const b of parseProtocol(text)) {
     const content = b.lines.join("\n").trim();
     if (!content) continue;
+    if (b.name && (normLabel(b.name).startsWith("gia goi") || normLabel(b.name) === "gia")) {
+      legacyPackagePrice = fmtMoneyInput(content);
+      continue;
+    }
     const key = b.name ? keyOf(b.name) : "tinhTrangMucTieu";
     f[key] = f[key] ? f[key] + "\n" + content : content;
   }
-  return f;
+  return { fields: f, legacyPackagePrice };
 }
 
 // Field -> text `Nhãn: value` (bỏ field trống) để read-mode parse lại đúng.
@@ -645,6 +667,8 @@ function ProtoInput({
   placeholder,
   required,
   rows = 1,
+  onBlur,
+  inputMode,
 }: {
   label: string;
   value: string;
@@ -652,6 +676,8 @@ function ProtoInput({
   placeholder: string;
   required?: boolean;
   rows?: number;
+  onBlur?: () => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }) {
   const cls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13.5px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:bg-white";
   return (
@@ -660,7 +686,7 @@ function ProtoInput({
       {rows > 1 ? (
         <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} placeholder={placeholder} className={`${cls} resize-y`} />
       ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cls} />
+        <input value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} inputMode={inputMode} placeholder={placeholder} className={cls} />
       )}
     </div>
   );

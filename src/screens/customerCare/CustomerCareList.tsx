@@ -3,6 +3,7 @@ import { chipStyle } from "../../lib/chipColor";
 import { Loader2, Search, SlidersHorizontal, X, AlertTriangle, MessageCircle } from "lucide-react";
 import { fetchCarePatients, fetchCareRhythmPhases, type CareRhythmPhase } from "../../lib/customerCare";
 import type { Patient } from "../../lib/technician";
+import { TierChip, LifecycleChip } from "../../components/PatientTags";
 
 // CV-08: ngưỡng lấy từ giai đoạn (bảng CareRhythmPhase, quản trị trên web) -> server trả overdueDays.
 // overdueDays null = khách không tính nhịp (đã bỏ liệu trình / ngừng chăm).
@@ -251,10 +252,14 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
                 <div className="flex items-center gap-1.5">
                   {p.careIncident && <AlertTriangle size={14} className="shrink-0 text-red-500" />}
                   <div className="truncate text-[15px] font-bold text-slate-800">{p.name}</div>
+                  {p.tierSlug === "vip" && <TierChip p={p} />}
                 </div>
                 <div className="mt-0.5 truncate text-[12.5px] text-slate-500">{p.service}</div>
-                <div className="mt-1.5 flex items-center justify-between text-[12px] text-slate-400">
-                  <span className="font-semibold text-slate-500">Buổi {p.sessionDone}/{p.sessionTotal}</span>
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[12px] text-slate-400">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <LifecycleChip p={p} subtle />
+                    <span className="font-semibold text-slate-500">Buổi {p.sessionDone}/{p.sessionTotal}</span>
+                  </span>
                   <span>Hẹn gần nhất: {fmtDate(p.lastCareAt)}</span>
                 </div>
               </div>

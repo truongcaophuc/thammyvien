@@ -17,6 +17,7 @@ const iconOf: Record<string, React.ReactNode> = {
   deal_open: <Bell size={18} className="text-rose-600" />,
   treatment_checkin: <Stethoscope size={18} className="text-emerald-600" />,
   session_completed: <CalendarPlus size={18} className="text-amber-600" />,
+  care_assigned: <UserPlus size={18} className="text-brand-600" />,
   test: <CheckCircle2 size={18} className="text-sky-600" />,
 };
 
@@ -26,6 +27,7 @@ const bgOf: Record<string, string> = {
   deal_open: "bg-rose-100",
   treatment_checkin: "bg-emerald-100",
   session_completed: "bg-amber-100",
+  care_assigned: "bg-brand-100",
   test: "bg-sky-100",
 };
 

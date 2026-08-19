@@ -8,6 +8,7 @@ import CareStatusEditor from "../../components/CareStatusEditor";
 import CustomerProfileCard from "../../components/CustomerProfileCard";
 import SessionEditSheet from "../../components/SessionEditSheet";
 import { ProtocolView } from "../../components/ProtocolView";
+import { TierChip, LifecycleChip } from "../../components/PatientTags";
 
 // trạng thái buổi (đọc-only cho CSKH)
 const SESSION_STATUS: Record<string, { label: string; cls: string }> = {
@@ -292,7 +293,11 @@ export default function CustomerCareBook({
       <header className="sticky top-0 z-10 flex items-center gap-3 bg-white px-3 py-3 shadow-sm">
         <button onClick={handleBack} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"><ArrowLeft size={22} /></button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-bold text-slate-800">{patient.name}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-[16px] font-bold text-slate-800">{patient.name}</div>
+            {patient.tierSlug === "vip" && <TierChip p={patient} />}
+            <LifecycleChip p={patient} subtle />
+          </div>
           <div className="text-[12px] text-slate-400">
             {patient.service || "Chưa gán liệu trình"} · Dự kiến đặt buổi {nextSessionGuess}/{patient.sessionTotal || "?"}
           </div>

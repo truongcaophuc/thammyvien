@@ -4,6 +4,7 @@ import { fetchCustomerCareOverview, fetchCarePatients, fetchCustomerCareNotifica
 import type { Patient } from "../../lib/technician";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
+import { TierChip, LifecycleChip } from "../../components/PatientTags";
 
 // Avatar: 2 chữ cái + màu hash cố định (đồng bộ danh sách khách).
 function initials(name: string): string {
@@ -154,11 +155,15 @@ export default function CustomerCareOverviewScreen({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[14px] font-semibold text-slate-800">{p.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[14px] font-semibold text-slate-800">{p.name}</span>
+                      {p.tierSlug === "vip" && <TierChip p={p} />}
+                    </span>
                     <span className="shrink-0 text-[11.5px] font-semibold text-slate-400">
                       Buổi {p.sessionDone}/{p.sessionTotal || "?"}
                     </span>
                   </div>
+                  <div className="mt-1 text-[11.5px]"><LifecycleChip p={p} subtle /></div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
                   </div>
