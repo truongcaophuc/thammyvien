@@ -160,14 +160,16 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
                         <Star size={11} /> {p.qaScore}
                       </span>
                     )}
-                    <TierChip p={p} />
-                    <LifecycleChip p={p} />
+                    {p.tierSlug === "vip" && <TierChip p={p} />}
                     <PaymentChip p={p} />
                   </span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-[12.5px]">
-                  <span className="truncate text-slate-500">{p.service || "Chưa có liệu trình"}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11.5px]">
+                <div className="mt-0.5 truncate text-[12.5px] text-slate-500">
+                  {p.service || "Chưa có liệu trình"}
+                </div>
+                <div className="mt-1.5 flex min-h-4 items-center justify-between gap-2 text-[11.5px]">
+                  <LifecycleChip p={p} subtle />
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
                     {p.zaloGroupUrl && <MessageCircle size={13} className="text-sky-500" />}
                     <span className="inline-flex items-center gap-1 text-slate-400">
                       <Clock size={11} /> {fmtRelative(p.lastCareAt)}

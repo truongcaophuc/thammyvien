@@ -22,9 +22,17 @@ export function TierChip({ p }: { p: Patient }) {
 }
 
 /** Chip vòng đời tự động: chưa có buổi completed là KH mới, ngược lại là KH cũ. */
-export function LifecycleChip({ p }: { p: Patient }) {
+export function LifecycleChip({ p, subtle = false }: { p: Patient; subtle?: boolean }) {
   if (!p.lifecycleName) return null;
   const c = p.lifecycleColor || "#64748b";
+  if (subtle) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 font-medium text-slate-500">
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />
+        {p.lifecycleName}
+      </span>
+    );
+  }
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
