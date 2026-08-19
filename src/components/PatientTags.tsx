@@ -1,11 +1,12 @@
 // Chip phân loại KH + trạng thái chốt/thanh toán — dùng chung cho Tổng quan và danh sách khách.
 import type { Patient } from "../lib/technician";
+import { chipStyle } from "../lib/chipColor";
 
 export function fmtMoney(n: number): string {
   return new Intl.NumberFormat("vi-VN").format(n);
 }
 
-/** Chip phân loại KH (tag customer_tier: KH mới / KH cũ / KH VIP). Màu lấy từ tag. */
+/** Chip hạng khách tự động theo giá gói. */
 export function TierChip({ p }: { p: Patient }) {
   if (!p.tierName) return null;
   const c = p.tierColor || "#64748b";
@@ -16,6 +17,21 @@ export function TierChip({ p }: { p: Patient }) {
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: c }} />
       {p.tierName}
+    </span>
+  );
+}
+
+/** Chip vòng đời tự động: chưa có buổi completed là KH mới, ngược lại là KH cũ. */
+export function LifecycleChip({ p }: { p: Patient }) {
+  if (!p.lifecycleName) return null;
+  const c = p.lifecycleColor || "#64748b";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+      style={chipStyle(c)}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />
+      {p.lifecycleName}
     </span>
   );
 }

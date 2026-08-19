@@ -62,7 +62,10 @@ export default function CareStatusEditor({
 
   // `only` lọc ở client: careTagOptions trả sẵn mọi chiều, không cần thêm tham số BE.
   const groups = useMemo(
-    () => (allGroups && only ? allGroups.filter((g) => only.includes(g.groupSlug)) : allGroups),
+    () => {
+      const editable = allGroups?.filter((g) => g.groupSlug !== "customer_tier" && g.groupSlug !== "customer_lifecycle") ?? allGroups;
+      return editable && only ? editable.filter((g) => only.includes(g.groupSlug)) : editable;
+    },
     [allGroups, only],
   );
 

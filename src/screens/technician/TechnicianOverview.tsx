@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Users, CheckCircle2, Wallet, DoorOpen, ChevronRight, RotateCw, Bell } from "lucide-react";
 import { fetchTechnicianOverview, fetchMyPatients, fetchTreatmentNotifications, type TechnicianOverview, type Patient } from "../../lib/technician";
-import { TierChip, PaymentChip } from "../../components/PatientTags";
+import { TierChip, LifecycleChip, PaymentChip } from "../../components/PatientTags";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
 
@@ -154,7 +154,7 @@ export default function TechnicianOverviewScreen({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-[14px] font-semibold text-slate-800">{p.name}</span>
-                    <TierChip p={p} />
+                    <span className="flex shrink-0 gap-1"><TierChip p={p} /><LifecycleChip p={p} /></span>
                   </div>
                   {(p.dealStatus === "open" || p.debtTagName) && (
                     <div className="mt-1 flex items-center gap-1.5">

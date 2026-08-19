@@ -51,10 +51,13 @@ export interface Patient {
   carePhaseColor?: string | null;
   carePhaseSlug?: string | null;
   overdueDays?: number | null;        // <=0 còn hạn, >0 đang trễ
-  // Phân loại KH (tag `customer_tier` gắn ở Customer): KH mới / KH cũ / KH VIP.
+  // Hai chiều tự động: hạng khách theo giá gói và vòng đời theo buổi completed.
   tierSlug?: string | null;
   tierName?: string | null;
   tierColor?: string | null;
+  lifecycleSlug?: string | null;
+  lifecycleName?: string | null;
+  lifecycleColor?: string | null;
   // Chốt gói + công nợ (gắn ở liệu trình active).
   dealStatus?: string | null;         // closed | open | null (chưa đánh giá)
   packagePrice?: number | null;
@@ -100,7 +103,7 @@ const MY_PATIENTS = `
     myPatients {
       id name phone service sessionDone sessionTotal lastCareAt
       zaloGroupUrl qaScore needCareToday protocol
-      tierSlug tierName tierColor
+      tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
       dealStatus packagePrice paidAmount debtAmount nextPaymentDate hasDebt
       debtTagSlug debtTagName debtTagColor
       careAgentId careAgentName
@@ -162,10 +165,13 @@ export interface TechnicianAppointment {
   therapistName?: string | null;
   doctorName?: string | null;
   resources: AppointmentResource[];
-  // Phân loại KH (tag `customer_tier`, gán tay): KH mới / KH cũ / KH VIP.
+  // Hai chiều tự động: hạng khách và vòng đời.
   tierSlug?: string | null;
   tierName?: string | null;
   tierColor?: string | null;
+  lifecycleSlug?: string | null;
+  lifecycleName?: string | null;
+  lifecycleColor?: string | null;
 }
 
 export interface AppointmentResource {
@@ -183,7 +189,7 @@ const TECHNICIAN_APPOINTMENTS = `
       appointmentId customerId customerName customerPhone startAtIso status source
       sessionNumber sessionTotal serviceName branchName therapistName doctorName
       resources { resourceId resourceName resourceTypeName resourceTypeSlug role allocationStatus }
-      tierSlug tierName tierColor
+      tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
     }
   }
 `;
@@ -193,7 +199,7 @@ const TECHNICIAN_APPOINTMENTS_LEGACY = `
     technicianAppointments(fromDate: $fromDate, toDate: $toDate) {
       appointmentId customerId customerName customerPhone startAtIso status source
       sessionNumber sessionTotal serviceName branchName therapistName doctorName
-      tierSlug tierName tierColor
+      tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
     }
   }
 `;

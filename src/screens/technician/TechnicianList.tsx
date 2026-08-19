@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, MessageCircle, Star, Clock } from "lucide-react";
 import { fetchMyPatients, type Patient } from "../../lib/technician";
-import { TierChip, PaymentChip, sortPatients } from "../../components/PatientTags";
+import { TierChip, LifecycleChip, PaymentChip, sortPatients } from "../../components/PatientTags";
 import { chipStyle, chipDot } from "../../lib/chipColor";
 
 // ISO -> dd/mm/yyyy (bỏ giờ). Rỗng/không hợp lệ -> "—".
@@ -45,7 +45,7 @@ function colorOf(s: string): string {
 export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [q, setQ] = useState("");
-  const [tierFilter, setTierFilter] = useState<string | null>(null); // lọc theo tag phân loại KH
+  const [tierFilter, setTierFilter] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,20 +65,25 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
   // Sắp xếp lại ở client cho khớp backend: khách vừa sửa phác đồ nhảy lên đầu ngay
   // cả khi list đang là bản cache (chưa refetch xong).
   const filtered = sortPatients(patients ?? []).filter((p) => {
-    if (tierFilter && p.tierName !== tierFilter) return false;
+    if (tierFilter && p.tierName !== tierFilter && p.lifecycleName !== tierFilter) return false;
     const hay = (p.name + " " + p.phone + " " + p.service).toLowerCase();
     return !q.trim() || hay.includes(q.trim().toLowerCase());
   });
 
-  // Chip lọc theo tag phân loại KH — đếm từ list đã tải (thứ tự mới → cũ → VIP).
+  // Chip lọc gộp cả hai chiều tự động.
   const tierChips = useMemo(() => {
-    const ORDER = ["KH mới", "KH cũ", "KH VIP"];
+    const ORDER = ["KH mới", "KH cũ", "Thường", "VIP"];
     const m = new Map<string, { count: number; color: string }>();
     (patients ?? []).forEach((p) => {
-      if (!p.tierName) return;
-      const e = m.get(p.tierName) || { count: 0, color: p.tierColor || "#94a3b8" };
-      e.count++;
-      m.set(p.tierName, e);
+      const values = [
+        p.lifecycleName ? { name: p.lifecycleName, color: p.lifecycleColor } : null,
+        p.tierName ? { name: p.tierName, color: p.tierColor } : null,
+      ].filter(Boolean) as { name: string; color?: string | null }[];
+      values.forEach((v) => {
+        const e = m.get(v.name) || { count: 0, color: v.color || "#94a3b8" };
+        e.count++;
+        m.set(v.name, e);
+      });
     });
     const rank = (s: string) => (ORDER.indexOf(s) < 0 ? 99 : ORDER.indexOf(s));
     return [...m.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([label, e]) => ({ label, ...e }));
@@ -156,6 +161,7 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
                       </span>
                     )}
                     <TierChip p={p} />
+                    <LifecycleChip p={p} />
                     <PaymentChip p={p} />
                   </span>
                 </div>

@@ -44,6 +44,7 @@ const CARE_PATIENTS = `
       id name phone service sessionDone sessionTotal lastCareAt protocol careStatus careStatusColor satisfaction satisfactionColor careIncident
       lastInteractionAt daysSinceInteraction interactedToday messagedToday calledToday todayProofCount
       carePhase carePhaseColor carePhaseSlug overdueDays lastUpdatedAt
+      tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
     }
   }
 `;

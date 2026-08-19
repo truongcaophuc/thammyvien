@@ -14,7 +14,7 @@ import CareStatusEditor from "../../components/CareStatusEditor";
 import { getCalendarResources, type CalendarResource } from "../../lib/calendar";
 
 // Hai chiều Trợ lý được đụng. Hằng cấp module vì prop `only` là mảng — inline sẽ đổi ref mỗi render.
-const TECHNICIAN_TAGS = ["customer_tier", "debt_status"];
+const TECHNICIAN_TAGS = ["debt_status"];
 
 // Chi tiết khách điều trị: Trợ lý cập nhật phác đồ điều trị.
 // Nhật ký từng buổi/ảnh trước sau chuyển sang màn CSKH để hồ sơ điều trị nằm một chỗ.

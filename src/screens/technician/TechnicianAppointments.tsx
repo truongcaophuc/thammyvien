@@ -194,12 +194,12 @@ export default function TechnicianAppointments() {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
               <span className="truncate text-[15px] font-bold text-slate-800">{a.customerName}</span>
-              {a.tierName && (
+              {(a.tierName || a.lifecycleName) && (
                 <span
                   className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
                   style={chipStyle(a.tierColor)}
                 >
-                  <Tag size={11} /> {a.tierName}
+                  <Tag size={11} /> {[a.tierName, a.lifecycleName].filter(Boolean).join(" · ")}
                 </span>
               )}
               <span className={`ml-auto shrink-0 rounded-lg px-1.5 py-0.5 text-[11px] font-bold ${meta.cls}`}>
