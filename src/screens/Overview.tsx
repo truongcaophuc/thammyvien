@@ -118,6 +118,12 @@ export default function Overview({
     return () => { cancelled = true; };
   }, [notifBust]);
 
+  useEffect(() => {
+    const refreshNotifications = () => setNotifBust((b) => b + 1);
+    window.addEventListener("sw-push", refreshNotifications);
+    return () => window.removeEventListener("sw-push", refreshNotifications);
+  }, []);
+
   if (err) {
     return (
       <div className="px-4 pt-6">

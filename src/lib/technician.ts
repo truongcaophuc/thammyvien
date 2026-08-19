@@ -51,6 +51,26 @@ export interface Patient {
   carePhaseColor?: string | null;
   carePhaseSlug?: string | null;
   overdueDays?: number | null;        // <=0 còn hạn, >0 đang trễ
+  // Phân loại KH (tag `customer_tier` gắn ở Customer): KH mới / KH cũ / KH VIP.
+  tierSlug?: string | null;
+  tierName?: string | null;
+  tierColor?: string | null;
+  // Chốt gói + công nợ (gắn ở liệu trình active).
+  dealStatus?: string | null;         // closed | open | null (chưa đánh giá)
+  packagePrice?: number | null;
+  paidAmount?: number | null;
+  debtAmount?: number | null;
+  nextPaymentDate?: string | null;
+  hasDebt?: boolean;
+  // Trạng thái thanh toán = tag debt_status Trợ lý gán tay (nguồn hiển thị chip).
+  debtTagSlug?: string | null;
+  debtTagName?: string | null;
+  debtTagColor?: string | null;
+  careAgentId?: string | null;
+  careAgentName?: string | null;
+  // Mốc sắp xếp (VIP → vừa cập nhật → ngày tới khám).
+  lastUpdatedAt?: string | null;
+  nextAppointmentAt?: string | null;
 }
 
 export interface Session {
@@ -80,22 +100,26 @@ const MY_PATIENTS = `
     myPatients {
       id name phone service sessionDone sessionTotal lastCareAt
       zaloGroupUrl qaScore needCareToday protocol
+      tierSlug tierName tierColor
+      dealStatus packagePrice paidAmount debtAmount nextPaymentDate hasDebt
+      debtTagSlug debtTagName debtTagColor
+      careAgentId careAgentName
+      lastUpdatedAt nextAppointmentAt
     }
   }
 `;
 
-// ===== Tổng quan ĐTV =====
+// ===== Tổng quan Trợ lý — 4 ô bám công việc trong NGÀY (không phải tiến độ điều trị) =====
 export interface TechnicianOverview {
   agentName: string;
-  activeCount: number;
-  completedToday: number;
-  completedThisWeek: number;
-  needCareCount: number;
-  almostDoneCount: number;
+  needConsultCount: number;      // tổng khách có lịch hôm nay
+  closedCount: number;           // trong số đó, đã chốt gói
+  awaitingPaymentCount: number;  // liệu trình active còn nợ
+  needRoomCount: number;         // lịch hôm nay chưa gán phòng
 }
 const TECHNICIAN_OVERVIEW = `
   query TechnicianOverview {
-    technicianOverview { agentName activeCount completedToday completedThisWeek needCareCount almostDoneCount }
+    technicianOverview { agentName needConsultCount closedCount awaitingPaymentCount needRoomCount }
   }
 `;
 export async function fetchTechnicianOverview(): Promise<TechnicianOverview> {
@@ -207,16 +231,39 @@ const SAVE_TREATMENT = `
   }
 `;
 
-// Lưu PHÁC ĐỒ TỔNG của khách (text). Không kèm ảnh (ảnh nằm ở từng buổi).
+// Lưu PHÁC ĐỒ TỔNG của khách (text) + kết quả chốt gói/công nợ.
+// dealStatus='closed' là cầu duy nhất đẩy hồ sơ sang pool CSKH; 'open' đẩy ngược về Telesale.
+// Trường bỏ trống = không đổi, nên các màn cũ gọi { customerId, protocol } vẫn chạy y như trước.
 export async function saveTreatmentRecord(input: {
   customerId: string;
   protocol: string;
+  dealStatus?: "closed" | "open" | null;
+  dealNote?: string;
+  recordings?: TreatmentPhotoInput[];
+  serviceName?: string;
+  totalSessions?: number | null;
+  packagePrice?: number | null;
+  paidAmount?: number | null;
+  debtAmount?: number | null;
+  nextPaymentDate?: string | null;
 }): Promise<{ success: boolean }> {
   const data = await gql<{ saveTreatmentRecord: { success: boolean } }>(
     SAVE_TREATMENT,
-    { input: { customerId: input.customerId, protocol: input.protocol } },
+    { input: { ...input, protocol: input.protocol } },
   );
   return { success: data.saveTreatmentRecord.success };
+}
+
+const PATIENT_RECORDINGS = `
+  query PatientRecordings($customerId: UUID!) {
+    patientRecordings(customerId: $customerId)
+  }
+`;
+
+// Ghi âm buổi tư vấn đã lưu — dataUri base64, gán thẳng <audio src>.
+export async function fetchPatientRecordings(customerId: string): Promise<string[]> {
+  const data = await gql<{ patientRecordings: string[] }>(PATIENT_RECORDINGS, { customerId });
+  return data.patientRecordings ?? [];
 }
 
 const COMPLETE_TREATMENT = `

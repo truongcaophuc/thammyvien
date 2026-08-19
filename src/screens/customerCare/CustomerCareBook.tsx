@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
 import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera } from "lucide-react";
-import { fileToBase64, type Patient } from "../../lib/technician";
+import { completeSession, fileToBase64, type Patient } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
 import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, saveCskhNote, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
 import CareStatusEditor from "../../components/CareStatusEditor";
@@ -80,14 +80,14 @@ export default function CustomerCareBook({
   const [care, setCare] = useState<CareTreatment | null>(null);
   const [note, setNote] = useState("");        // note CSKH theo liệu trình
   const [noteBusy, setNoteBusy] = useState(false);
-  const [protocolOpen, setProtocolOpen] = useState(true);
+  const [protocolOpen, setProtocolOpen] = useState(false);
   const [careOpen, setCareOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [openSessions, setOpenSessions] = useState<Set<string>>(() => new Set());
   const [skinValues, setSkinValues] = useState<CareTagValue[]>([]);
   const [skinBusy, setSkinBusy] = useState<string | null>(null); // appointmentId đang lưu
-  const [skinSheetAppt, setSkinSheetAppt] = useState<string | null>(null); // buổi đang mở sheet ghi nhận da
-  const [editAppt, setEditAppt] = useState<string | null>(null); // CV-14: buổi đang mở sheet sửa
+  const [editAppt, setEditAppt] = useState<string | null>(null); // CV-14: buổi đang mở sheet cập nhật
+  const [completing, setCompleting] = useState(false);
   // CV-23: tích "đã nhắn/gọi hôm nay" ngay tại màn khách
   const [tickedToday, setTickedToday] = useState(!!patient.interactedToday);
   const [tickDays, setTickDays] = useState(patient.daysSinceInteraction ?? -1);
@@ -251,6 +251,29 @@ export default function CustomerCareBook({
     setNoteBusy(false);
   }
 
+  async function handleCompleteSession(appointmentId: string) {
+    if (completing) return;
+    const aid = appointmentId;
+    setCompleting(true);
+    try {
+      const res = await completeSession(aid);
+      if (res.success) {
+        setCare((prev) => prev && ({
+          ...prev,
+          sessions: prev.sessions.map((s) => (s.appointmentId === aid ? { ...s, status: "completed" } : s)),
+        }));
+        setEditAppt(null);
+        onSaved("Đã hoàn thành buổi");
+      } else {
+        onSaved(res.error || "Không hoàn thành được, thử lại");
+      }
+    } catch {
+      onSaved("Không hoàn thành được, thử lại");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
   const canSave = !!branch && !!slot && !saving;
   const dirty =
     noteDirty
@@ -343,7 +366,7 @@ export default function CustomerCareBook({
         {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
         <CustomerProfileCard customerId={patient.id} />
 
-        {/* Phác đồ tổng — CSKH xem cùng cấu trúc form Trợ lý nhập. */}
+        {/* Phác đồ điều trị — CSKH xem cùng cấu trúc form Trợ lý nhập. */}
         {care && (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
             <button
@@ -352,7 +375,7 @@ export default function CustomerCareBook({
               className="flex w-full items-center gap-2 p-4 text-left"
             >
               <ClipboardList size={17} className="text-brand-600" />
-              <span className="text-[14px] font-bold text-slate-800">Phác đồ tổng</span>
+              <span className="text-[14px] font-bold text-slate-800">Phác đồ điều trị</span>
               <ChevronDown size={18} className={`ml-auto shrink-0 text-slate-400 transition-transform ${protocolOpen ? "rotate-180" : ""}`} />
             </button>
             {protocolOpen && (
@@ -360,7 +383,7 @@ export default function CustomerCareBook({
                 {care.protocol ? (
                   <ProtocolView text={care.protocol} />
                 ) : (
-                  <div className="text-[12.5px] text-slate-400">Chưa có phác đồ tổng.</div>
+                  <div className="text-[12.5px] text-slate-400">Chưa có phác đồ điều trị.</div>
                 )}
               </div>
             )}
@@ -459,7 +482,7 @@ export default function CustomerCareBook({
                                     onClick={() => setEditAppt(s.appointmentId)}
                                     className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
                                   >
-                                    <Pencil size={13} /> Sửa buổi
+                                    <Pencil size={13} /> Cập nhật buổi
                                   </button>
                                 </div>
                                 {s.note ? (
@@ -498,13 +521,6 @@ export default function CustomerCareBook({
                                         <span className="text-[12.5px] text-slate-400">Chưa ghi nhận</span>
                                       )}
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSkinSheetAppt(s.appointmentId)}
-                                      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
-                                    >
-                                      <Pencil size={13} /> {s.skinName ? "Sửa" : "Ghi nhận"}
-                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -681,62 +697,16 @@ export default function CustomerCareBook({
         </div>
       )}
 
-      {/* Bottom sheet: ghi nhận tình trạng da cho 1 buổi (không lồng trong nhật ký read-only) */}
-      {(() => {
-        const es = care?.sessions.find((x) => x.appointmentId === skinSheetAppt) || null;
-        return (
-          <div className={`fixed inset-0 z-[60] ${skinSheetAppt ? "" : "pointer-events-none"}`} aria-hidden={!skinSheetAppt}>
-            <div
-              onClick={() => setSkinSheetAppt(null)}
-              className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${skinSheetAppt ? "opacity-100" : "opacity-0"}`}
-            />
-            <div
-              className={`absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-2xl bg-white shadow-2xl transition-transform duration-300 ${skinSheetAppt ? "translate-y-0" : "translate-y-full"}`}
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div className="text-[15px] font-bold text-slate-800">
-                  Tình trạng da{es?.sessionNumber ? ` — Buổi ${es.sessionNumber}` : ""}
-                </div>
-                <button onClick={() => setSkinSheetAppt(null)} aria-label="Đóng" className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100">
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto px-4 py-4">
-                <div className="flex flex-wrap gap-1.5">
-                  {skinValues.map((v) => {
-                    const on = es?.skinSlug === v.slug;
-                    const c = v.color || "#94a3b8";
-                    return (
-                      <button
-                        key={v.slug}
-                        type="button"
-                        disabled={skinBusy === skinSheetAppt}
-                        onClick={() => skinSheetAppt && setSessionSkin(skinSheetAppt, v.slug)}
-                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 disabled:opacity-60"
-                        style={chipStyle(c, on)}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
-                        {v.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="border-t border-slate-100 px-4 py-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
-                <button onClick={() => setSkinSheetAppt(null)} className="w-full rounded-xl bg-violet-600 py-2.5 text-[14px] font-bold text-white transition active:scale-[0.98]">
-                  Xong
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* CV-14: sheet sửa buổi — lưu xong nạp lại hồ sơ điều trị tại chỗ */}
+      {/* CV-14: sheet cập nhật buổi — lưu xong nạp lại hồ sơ điều trị tại chỗ */}
       {editAppt && (
         <SessionEditSheet
           session={care?.sessions.find((s) => s.appointmentId === editAppt) ?? null}
+          skinValues={skinValues}
+          skinBusy={skinBusy === editAppt}
+          completing={completing}
           onClose={() => setEditAppt(null)}
+          onSetSkin={setSessionSkin}
+          onComplete={handleCompleteSession}
           onSaved={(msg) => {
             onSaved(msg);
             fetchCareTreatment(patient.id).then(setCare).catch(() => {});

@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// ---- Phác đồ tổng: parse text tự do -> mục có icon (auto theo nhãn, dùng chung ĐTV + CSKH) ----
+// ---- Phác đồ điều trị: parse text tự do -> mục có icon (auto theo nhãn, dùng chung ĐTV + CSKH) ----
 export const PROTO_LABELS: { icon: LucideIcon; tint: string; keys: string[] }[] = [
   { icon: ClipboardList, tint: "text-brand-600", keys: ["ten lieu trinh", "lieu trinh"] },
   { icon: BadgeDollarSign, tint: "text-emerald-600", keys: ["gia goi", "gia"] },
@@ -32,7 +32,7 @@ const STRUCTURED_FIELDS: { label: string; keys: string[]; icon: LucideIcon; tint
   { label: "Giá gói", keys: ["gia goi", "gia"], icon: BadgeDollarSign, tint: "text-emerald-600" },
   { label: "Bác sĩ", keys: ["bac si", "bs"], icon: Stethoscope, tint: "text-sky-600" },
   { label: "ĐTV", keys: ["dtv", "dieu tri vien", "ky thuat vien"], icon: UserRound, tint: "text-violet-600" },
-  { label: "Mỹ phẩm dự kiến", keys: ["my pham", "cong nghe", "may", "thiet bi", "san pham", "phuong phap", "cong nghe/san pham"], icon: PackageOpen, tint: "text-cyan-600" },
+  { label: "Mỹ phẩm", keys: ["my pham", "cong nghe", "may", "thiet bi", "san pham", "phuong phap", "cong nghe/san pham"], icon: PackageOpen, tint: "text-cyan-600" },
   { label: "Tình trạng / mục tiêu", keys: ["tinh trang / muc tieu", "tinh trang", "chan doan", "hien trang", "da", "muc tieu", "ket qua", "mong muon"], icon: Target, tint: "text-emerald-600" },
   { label: "Note thêm cho CSKH", keys: ["note them cho cskh", "note cskh", "luu y", "chu y", "kieng", "canh bao", "chong chi dinh"], icon: MessageSquareText, tint: "text-amber-600" },
 ];

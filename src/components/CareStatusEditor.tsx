@@ -35,6 +35,7 @@ export default function CareStatusEditor({
 }) {
   const [allGroups, setAllGroups] = useState<CareTagGroup[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   // CV-20: form ticket complain (mở khi chọn giá trị satisfaction có cờ isComplain)
   const [complainOpen, setComplainOpen] = useState(false);
@@ -78,6 +79,7 @@ export default function CareStatusEditor({
   async function pick(g: CareTagGroup, valueSlug: string) {
     const next = g.current === valueSlug ? null : valueSlug; // bấm lại = bỏ chọn
     setBusy(g.groupSlug + valueSlug);
+    setErr(null);
     // optimistic
     setAllGroups((prev) =>
       (prev ?? []).map((x) =>
@@ -99,7 +101,9 @@ export default function CareStatusEditor({
         setCDone(false);
         setComplainOpen(true);
       }
-    } catch {
+    } catch (e) {
+      // Trước đây nuốt lỗi im lặng: chip tự bật về cũ, người dùng tưởng "bấm lưu mà không lưu".
+      setErr(e instanceof Error ? e.message : "Không lưu được trạng thái");
       await load(); // lỗi -> nạp lại trạng thái thật
     } finally {
       setBusy(null);
@@ -170,6 +174,9 @@ export default function CareStatusEditor({
             </button>
           </div>
           <div className="max-h-[62vh] space-y-4 overflow-y-auto px-4 py-4">
+            {err && (
+              <div className="rounded-xl bg-rose-50 px-3 py-2 text-[12.5px] font-semibold text-rose-600">{err}</div>
+            )}
             {groups.map((g) => (
               <div key={g.groupSlug}>
                 <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">{g.groupName}</div>

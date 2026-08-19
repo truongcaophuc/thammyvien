@@ -27,6 +27,12 @@ function fmtDate(iso: string): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+function timeRank(iso?: string | null): number {
+  if (!iso) return 0;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 // Avatar: 2 chữ cái + màu hash cố định (đồng bộ danh sách ĐTV + overview).
 function initials(name: string): string {
   const p = (name || "").trim().split(/\s+/).filter((w) => w && !/^\d/.test(w));
@@ -140,10 +146,10 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
       const hay = (p.name + " " + p.phone + " " + p.service).toLowerCase();
       return !q.trim() || hay.includes(q.trim().toLowerCase());
     })
-    // CV-07 "guồng": sự cố trước → theo trình tự giai đoạn đã cấu hình → trong mỗi giai đoạn
-    // thì trễ nhiều lên trước. Giai đoạn lạ/không tính nhịp xuống cuối.
+    // Khách vừa cập nhật nổi lên trước; sau đó mới theo guồng chăm sóc.
     .sort(
       (a, b) =>
+        timeRank(b.lastUpdatedAt) - timeRank(a.lastUpdatedAt) ||
         (b.careIncident ? 1 : 0) - (a.careIncident ? 1 : 0) ||
         (phaseRank.get(a.carePhaseSlug ?? "") ?? 99) - (phaseRank.get(b.carePhaseSlug ?? "") ?? 99) ||
         (b.overdueDays ?? -9999) - (a.overdueDays ?? -9999),

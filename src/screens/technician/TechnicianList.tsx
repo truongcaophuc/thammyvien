@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, MessageCircle, Star, Clock } from "lucide-react";
 import { fetchMyPatients, type Patient } from "../../lib/technician";
+import { TierChip, PaymentChip, sortPatients } from "../../components/PatientTags";
+import { chipStyle, chipDot } from "../../lib/chipColor";
 
 // ISO -> dd/mm/yyyy (bỏ giờ). Rỗng/không hợp lệ -> "—".
 function fmtDate(iso: string): string {
@@ -43,6 +45,7 @@ function colorOf(s: string): string {
 export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
   const [patients, setPatients] = useState<Patient[] | null>(null);
   const [q, setQ] = useState("");
+  const [tierFilter, setTierFilter] = useState<string | null>(null); // lọc theo tag phân loại KH
 
   useEffect(() => {
     let cancelled = false;
@@ -59,15 +62,32 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
     };
   }, []);
 
-  const filtered = (patients ?? []).filter((p) => {
+  // Sắp xếp lại ở client cho khớp backend: khách vừa sửa phác đồ nhảy lên đầu ngay
+  // cả khi list đang là bản cache (chưa refetch xong).
+  const filtered = sortPatients(patients ?? []).filter((p) => {
+    if (tierFilter && p.tierName !== tierFilter) return false;
     const hay = (p.name + " " + p.phone + " " + p.service).toLowerCase();
     return !q.trim() || hay.includes(q.trim().toLowerCase());
   });
 
+  // Chip lọc theo tag phân loại KH — đếm từ list đã tải (thứ tự mới → cũ → VIP).
+  const tierChips = useMemo(() => {
+    const ORDER = ["KH mới", "KH cũ", "KH VIP"];
+    const m = new Map<string, { count: number; color: string }>();
+    (patients ?? []).forEach((p) => {
+      if (!p.tierName) return;
+      const e = m.get(p.tierName) || { count: 0, color: p.tierColor || "#94a3b8" };
+      e.count++;
+      m.set(p.tierName, e);
+    });
+    const rank = (s: string) => (ORDER.indexOf(s) < 0 ? 99 : ORDER.indexOf(s));
+    return [...m.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([label, e]) => ({ label, ...e }));
+  }, [patients]);
+
   return (
     <div className="min-h-full bg-[#eef0f5]">
       <header className="sticky top-0 z-10 bg-white px-4 pb-3 pt-4 shadow-sm">
-        <h1 className="text-lg font-bold text-slate-800">Khách đang điều trị</h1>
+        <h1 className="text-lg font-bold text-slate-800">Khách hàng</h1>
         <p className="mt-0.5 text-[12.5px] text-slate-400">Cập nhật phác đồ &amp; nhật ký từng buổi</p>
         <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
           <Search size={16} className="text-slate-400" />
@@ -78,6 +98,32 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
             className="min-w-0 flex-1 bg-transparent py-2.5 text-[14px] outline-none placeholder:text-slate-400"
           />
         </div>
+        {tierChips.length > 0 && (
+          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5" style={{ scrollbarWidth: "none" }}>
+            <button
+              onClick={() => setTierFilter(null)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${
+                !tierFilter ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              Tất cả <span className="opacity-70">{(patients ?? []).length}</span>
+            </button>
+            {tierChips.map((c) => {
+              const on = tierFilter === c.label;
+              return (
+                <button
+                  key={c.label}
+                  onClick={(e) => { setTierFilter(on ? null : c.label); e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition"
+                  style={chipStyle(c.color, on)}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: chipDot(c.color, on) }} />
+                  {c.label} <span className="opacity-80">{c.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
       <div className="space-y-2.5 p-4">
@@ -101,33 +147,27 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[15px] font-bold text-slate-800">{p.name}</span>
-                  {typeof p.qaScore === "number" && (
-                    <span className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11.5px] font-bold ${
-                      p.qaScore >= 90 ? "bg-emerald-50 text-emerald-600" : p.qaScore >= 75 ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"
-                    }`}>
-                      <Star size={11} /> {p.qaScore}
-                    </span>
-                  )}
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {typeof p.qaScore === "number" && (
+                      <span className={`inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11.5px] font-bold ${
+                        p.qaScore >= 90 ? "bg-emerald-50 text-emerald-600" : p.qaScore >= 75 ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"
+                      }`}>
+                        <Star size={11} /> {p.qaScore}
+                      </span>
+                    )}
+                    <TierChip p={p} />
+                    <PaymentChip p={p} />
+                  </span>
                 </div>
-                <div className="mt-0.5 truncate text-[12.5px] text-slate-500">{p.service || "Chưa có liệu trình"}</div>
-                <div className="mb-1 mt-2 flex items-center justify-between gap-2 text-[11.5px]">
-                  {p.sessionTotal > 0 ? (
-                    <span className="font-semibold text-slate-500">Buổi {p.sessionDone}/{p.sessionTotal}</span>
-                  ) : (
-                    <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-bold text-amber-600">Chưa có liệu trình</span>
-                  )}
-                  <span className="flex items-center gap-1.5">
+                <div className="mt-0.5 flex items-center gap-2 text-[12.5px]">
+                  <span className="truncate text-slate-500">{p.service || "Chưa có liệu trình"}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11.5px]">
                     {p.zaloGroupUrl && <MessageCircle size={13} className="text-sky-500" />}
                     <span className="inline-flex items-center gap-1 text-slate-400">
                       <Clock size={11} /> {fmtRelative(p.lastCareAt)}
                     </span>
                   </span>
                 </div>
-                {p.sessionTotal > 0 && (
-                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, Math.round((p.sessionDone / Math.max(1, p.sessionTotal)) * 100))}%` }} />
-                  </div>
-                )}
               </div>
             </button>
           ))

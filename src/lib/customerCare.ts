@@ -2,7 +2,7 @@ import { gql } from "./graphql";
 import type { Patient, Session } from "./technician";
 import type { ServerNotification } from "./notifications";
 
-// CSKH xem READ-ONLY hồ sơ điều trị của khách (phác đồ tổng + lịch sử buổi + ảnh).
+// CSKH xem READ-ONLY hồ sơ điều trị của khách (phác đồ điều trị + lịch sử buổi + ảnh).
 export interface CareTreatment {
   protocol: string;
   sessions: Session[];
@@ -43,7 +43,7 @@ const CARE_PATIENTS = `
     carePatients(search: $search) {
       id name phone service sessionDone sessionTotal lastCareAt protocol careStatus careStatusColor satisfaction satisfactionColor careIncident
       lastInteractionAt daysSinceInteraction interactedToday messagedToday calledToday todayProofCount
-      carePhase carePhaseColor carePhaseSlug overdueDays
+      carePhase carePhaseColor carePhaseSlug overdueDays lastUpdatedAt
     }
   }
 `;

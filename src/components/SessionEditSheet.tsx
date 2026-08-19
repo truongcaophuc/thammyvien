@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../lib/chipColor";
-import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock } from "lucide-react";
-import { updateCareSession, UNASSIGN, type TreatmentPhoto } from "../lib/customerCare";
+import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock, Check } from "lucide-react";
+import { updateCareSession, UNASSIGN, type CareTagValue, type TreatmentPhoto } from "../lib/customerCare";
 import { fileToBase64, type Session } from "../lib/technician";
 import { getCalendarResources, type CalendarResource } from "../lib/calendar";
 
-// CV-14: CSKH sửa toàn bộ thông tin 1 buổi — ngày/giờ · ĐTV · bác sĩ · nhật ký · ảnh.
+// CV-14: CSKH cập nhật toàn bộ thông tin 1 buổi — hoàn tất · ngày/giờ · ĐTV · bác sĩ · da · nhật ký · ảnh.
 
 // "yyyy-MM-ddTHH:mm:ss" -> "yyyy-MM-ddTHH:mm" cho <input type="datetime-local">
 function toLocalInput(iso: string): string {
@@ -19,12 +19,22 @@ interface AddedPhoto {
 
 export default function SessionEditSheet({
   session,
+  skinValues = [],
+  skinBusy,
+  completing,
   onClose,
   onSaved,
+  onSetSkin,
+  onComplete,
 }: {
   session?: Session | null;
+  skinValues?: CareTagValue[];
+  skinBusy?: boolean;
+  completing?: boolean;
   onClose: () => void;
   onSaved: (msg: string) => void;
+  onSetSkin?: (appointmentId: string, valueSlug: string) => Promise<void> | void;
+  onComplete?: (appointmentId: string) => Promise<void> | void;
 }) {
   const [when, setWhen] = useState(() => (session ? toLocalInput(session.dateIso) : ""));
   // undefined = CSKH chưa đụng tới -> lấy mặc định suy từ buổi; null = đã chủ động bỏ chọn.
@@ -108,6 +118,7 @@ export default function SessionEditSheet({
   }
 
   const chipCls = "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95";
+  const canComplete = session?.status === "checked_in";
 
   return (
     <div className="fixed inset-0 z-[65]">
@@ -115,7 +126,7 @@ export default function SessionEditSheet({
       <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[92vh] max-w-md flex-col rounded-t-2xl bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <div className="text-[15px] font-bold text-slate-800">
-            {`Sửa buổi${session?.sessionNumber ? ` ${session.sessionNumber}` : ""}`}
+            {`Cập nhật buổi${session?.sessionNumber ? ` ${session.sessionNumber}` : ""}`}
           </div>
           <button onClick={onClose} aria-label="Đóng" className="rounded-full p-1 text-slate-400 hover:bg-slate-100">
             <X size={18} />
@@ -123,6 +134,24 @@ export default function SessionEditSheet({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          {canComplete && session && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+              <div className="text-[13px] font-bold text-emerald-700">Buổi đang điều trị</div>
+              <div className="mt-0.5 text-[12.5px] leading-relaxed text-emerald-700/80">
+                Khi buổi đã xong, hoàn tất tại đây để CSKH đặt buổi kế tiếp.
+              </div>
+              <button
+                type="button"
+                disabled={!!completing}
+                onClick={() => onComplete?.(session.appointmentId)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3.5 py-1.5 text-[12.5px] font-bold text-white transition active:scale-95 disabled:opacity-60"
+              >
+                {completing ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {completing ? "Đang hoàn tất…" : "Hoàn tất buổi"}
+              </button>
+            </div>
+          )}
+
           <div>
             <label className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
               <CalendarClock size={14} /> Ngày &amp; giờ
@@ -200,6 +229,31 @@ export default function SessionEditSheet({
               })}
             </div>
           </div>
+
+          {skinValues.length > 0 && session && (
+            <div>
+              <div className="mb-1.5 text-[12px] font-bold text-slate-600">Tình trạng da</div>
+              <div className="flex flex-wrap gap-1.5">
+                {skinValues.map((v) => {
+                  const on = session.skinSlug === v.slug;
+                  const c = v.color || "#94a3b8";
+                  return (
+                    <button
+                      key={v.slug}
+                      type="button"
+                      disabled={!!skinBusy}
+                      onClick={() => onSetSkin?.(session.appointmentId, v.slug)}
+                      className={chipCls}
+                      style={chipStyle(c, on)}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
+                      {v.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Nhật ký buổi</label>

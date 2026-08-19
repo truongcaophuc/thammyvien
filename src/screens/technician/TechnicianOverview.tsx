@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Users, CheckCircle2, CalendarRange, Award, ChevronRight, RotateCw, Bell } from "lucide-react";
+import { Loader2, Users, CheckCircle2, Wallet, DoorOpen, ChevronRight, RotateCw, Bell } from "lucide-react";
 import { fetchTechnicianOverview, fetchMyPatients, fetchTreatmentNotifications, type TechnicianOverview, type Patient } from "../../lib/technician";
+import { TierChip, PaymentChip } from "../../components/PatientTags";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
 
@@ -78,10 +79,10 @@ export default function TechnicianOverviewScreen({
   }
 
   const stats = [
-    { label: "Đang điều trị", value: data.activeCount, Icon: Users, tint: "bg-brand-50 text-brand-600" },
-    { label: "Hoàn thành hôm nay", value: data.completedToday, Icon: CheckCircle2, tint: "bg-emerald-50 text-emerald-600" },
-    { label: "Buổi tuần này", value: data.completedThisWeek, Icon: CalendarRange, tint: "bg-sky-50 text-sky-600" },
-    { label: "Sắp xong", value: data.almostDoneCount, Icon: Award, tint: "bg-amber-50 text-amber-600" },
+    { label: "Cần tư vấn", value: data.needConsultCount, Icon: Users, tint: "bg-brand-50 text-brand-600" },
+    { label: "Đã chốt", value: data.closedCount, Icon: CheckCircle2, tint: "bg-emerald-50 text-emerald-600" },
+    { label: "Chờ thanh toán", value: data.awaitingPaymentCount, Icon: Wallet, tint: "bg-amber-50 text-amber-600" },
+    { label: "Cần xếp phòng", value: data.needRoomCount, Icon: DoorOpen, tint: "bg-sky-50 text-sky-600" },
   ];
 
   const preview = (patients ?? []).slice(0, 5);
@@ -121,9 +122,9 @@ export default function TechnicianOverviewScreen({
         ))}
       </div>
 
-      {/* Khách đang điều trị — xem nhanh, bấm mở chi tiết */}
+      {/* Khách hàng hôm nay — xem nhanh, bấm mở chi tiết */}
       <div className="mb-2 mt-5 flex items-center justify-between px-1">
-        <div className="text-[13px] font-bold text-slate-500">Khách đang điều trị</div>
+        <div className="text-[13px] font-bold text-slate-500">Khách hàng</div>
         <button onClick={onGoPatients} className="flex items-center gap-0.5 text-[12.5px] font-semibold text-brand-600">
           Xem tất cả <ChevronRight size={15} />
         </button>
@@ -138,7 +139,6 @@ export default function TechnicianOverviewScreen({
       ) : (
         <div className="space-y-2">
           {preview.map((p) => {
-            const pct = Math.min(100, Math.round((p.sessionDone / Math.max(1, p.sessionTotal)) * 100));
             return (
               <button
                 key={p.id}
@@ -154,13 +154,13 @@ export default function TechnicianOverviewScreen({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-[14px] font-semibold text-slate-800">{p.name}</span>
-                    <span className="shrink-0 text-[11.5px] font-semibold text-slate-400">
-                      Buổi {p.sessionDone}/{p.sessionTotal || "?"}
-                    </span>
+                    <TierChip p={p} />
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} />
-                  </div>
+                  {(p.dealStatus === "open" || p.debtTagName) && (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <PaymentChip p={p} />
+                    </div>
+                  )}
                 </div>
                 <ChevronRight size={18} className="shrink-0 text-slate-300" />
               </button>
