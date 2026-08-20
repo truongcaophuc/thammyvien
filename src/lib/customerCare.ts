@@ -11,6 +11,14 @@ export interface CareTreatment {
   cskhNote: string;
   cskhNoteBy: string;
   cskhNoteAt: string;
+  // Gói & công nợ + ghi âm tư vấn Trợ lý bàn giao — CSKH chỉ xem.
+  packagePrice: number | null;
+  paidAmount: number | null;
+  debtAmount: number | null;
+  nextPaymentDate: string;
+  purchaseDate: string;
+  dealNote: string;
+  recordings: string[];
 }
 const CARE_TREATMENT = `
   query CareTreatment($customerId: UUID!) {
@@ -18,6 +26,7 @@ const CARE_TREATMENT = `
       protocol
       proofPhotos
       cskhNote cskhNoteBy cskhNoteAt
+      packagePrice paidAmount debtAmount nextPaymentDate purchaseDate dealNote recordings
       sessions { appointmentId sessionNumber dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
     }
   }

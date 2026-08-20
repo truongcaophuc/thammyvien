@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
-import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera } from "lucide-react";
+import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera, Wallet, Mic } from "lucide-react";
 import { completeSession, fileToBase64, type Patient } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
 import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, saveCskhNote, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
@@ -31,6 +31,13 @@ function fmtDateFull(iso: string): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+function fmtMoney(n: number | null | undefined): string {
+  return n ? new Intl.NumberFormat("vi-VN").format(n) + " đ" : "—";
+}
+function ddmmyyyy(iso: string): string {
+  return iso ? iso.split("-").reverse().join("/") : "—";
+}
+
 function formatHm(iso: string): string {
   const d = new Date(iso);
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
@@ -54,6 +61,16 @@ function buildBookingDays(): { label: string; iso: string; date: string }[] {
     out.push({ label, date: `${dd}/${mm}`, iso: `${d.getFullYear()}-${mm}-${dd}` });
   }
   return out;
+}
+
+/** Ô nhãn/giá trị chỉ đọc cho khối gói & công nợ. */
+function Info({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`text-[13.5px] font-bold ${tone ?? "text-slate-800"}`}>{value}</div>
+    </div>
+  );
 }
 
 export default function CustomerCareBook({
@@ -296,7 +313,8 @@ export default function CustomerCareBook({
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="truncate text-[16px] font-bold text-slate-800">{patient.name}</div>
             {patient.tierSlug === "vip" && <TierChip p={patient} />}
-            <LifecycleChip p={patient} subtle />
+            {/* subtle không tự set cỡ chữ -> để trần sẽ ăn 16px bold của tên khách. */}
+            <span className="text-[11px]"><LifecycleChip p={patient} subtle /></span>
           </div>
           <div className="text-[12px] text-slate-400">
             {patient.service || "Chưa gán liệu trình"} · Dự kiến đặt buổi {nextSessionGuess}/{patient.sessionTotal || "?"}
@@ -370,6 +388,45 @@ export default function CustomerCareBook({
         <CareStatusEditor customerId={patient.id} />
         {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
         <CustomerProfileCard customerId={patient.id} />
+
+        {/* Gói & công nợ Trợ lý chốt — chỉ xem, để CSKH biết khách còn nợ bao nhiêu khi gọi. */}
+        {care && (care.packagePrice || care.debtAmount || care.paidAmount) && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-2.5 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+              <Wallet size={17} className="text-brand-600" /> Gói &amp; công nợ
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+              <Info label="Giá gói" value={fmtMoney(care.packagePrice)} />
+              <Info label="Đã thanh toán" value={fmtMoney(care.paidAmount)} />
+              <Info
+                label="Còn nợ"
+                value={fmtMoney(care.debtAmount)}
+                tone={care.debtAmount ? "text-rose-600" : "text-emerald-600"}
+              />
+              <Info label="Hẹn trả tiếp" value={ddmmyyyy(care.nextPaymentDate)} />
+              {care.purchaseDate && <Info label="Ngày mua" value={ddmmyyyy(care.purchaseDate)} />}
+            </div>
+            {care.dealNote && (
+              <div className="mt-3 rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Lý do chưa chốt</div>
+                <div className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-slate-600">{care.dealNote}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Ghi âm buổi tư vấn Trợ lý lưu — nghe lại trước khi gọi khách. */}
+        {care && care.recordings.length > 0 && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+              <Mic size={17} className="text-brand-600" /> Ghi âm tư vấn
+              <span className="text-[12px] font-medium text-slate-400">· {care.recordings.length}</span>
+            </div>
+            {care.recordings.map((src, i) => (
+              <audio key={i} src={src} controls preload="none" className="mt-2 w-full" />
+            ))}
+          </div>
+        )}
 
         {/* Phác đồ điều trị — CSKH xem cùng cấu trúc form Trợ lý nhập. */}
         {care && (
