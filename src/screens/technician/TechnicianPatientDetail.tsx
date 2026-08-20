@@ -281,6 +281,8 @@ export default function TechnicianPatientDetail({
                 required
                 value={packagePrice}
                 onChange={(v) => setPackagePrice(moneyDigits(v))}
+                // Vào ô thì bỏ dấu chấm: chuỗi khi gõ = đúng cái user gõ nên con trỏ không nhảy về cuối.
+                onFocus={() => setPackagePrice(moneyDigits(packagePrice))}
                 onBlur={() => setPackagePrice(fmtMoneyInput(packagePrice))}
                 inputMode="numeric"
                 placeholder="Ví dụ: 48.000.000"
@@ -303,8 +305,8 @@ export default function TechnicianPatientDetail({
                 {!payFull && (
                   <div className="mt-3 space-y-2.5">
                     <div className="grid grid-cols-2 gap-2.5">
-                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(moneyDigits(v))} onBlur={() => setPaid(fmtMoneyInput(paid))} inputMode="numeric" placeholder="20.000.000" />
-                      <ProtoInput label="Còn nợ" value={debt} onChange={(v) => setDebt(moneyDigits(v))} onBlur={() => setDebt(fmtMoneyInput(debt))} inputMode="numeric" placeholder="28.000.000" />
+                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(moneyDigits(v))} onFocus={() => setPaid(moneyDigits(paid))} onBlur={() => setPaid(fmtMoneyInput(paid))} inputMode="numeric" placeholder="20.000.000" />
+                      <ProtoInput label="Còn nợ" value={debt} onChange={(v) => setDebt(moneyDigits(v))} onFocus={() => setDebt(moneyDigits(debt))} onBlur={() => setDebt(fmtMoneyInput(debt))} inputMode="numeric" placeholder="28.000.000" />
                     </div>
                     <div>
                       <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Ngày hẹn trả tiếp *</label>
@@ -668,6 +670,7 @@ function ProtoInput({
   required,
   rows = 1,
   onBlur,
+  onFocus,
   inputMode,
 }: {
   label: string;
@@ -677,6 +680,7 @@ function ProtoInput({
   required?: boolean;
   rows?: number;
   onBlur?: () => void;
+  onFocus?: () => void;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }) {
   const cls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13.5px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-brand-400 focus:bg-white";
@@ -686,7 +690,7 @@ function ProtoInput({
       {rows > 1 ? (
         <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} placeholder={placeholder} className={`${cls} resize-y`} />
       ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} inputMode={inputMode} placeholder={placeholder} className={cls} />
+        <input value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} onFocus={onFocus} inputMode={inputMode} placeholder={placeholder} className={cls} />
       )}
     </div>
   );

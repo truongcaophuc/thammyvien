@@ -21,6 +21,16 @@ declare const self: ServiceWorkerGlobalScope & {
 // ===== Pre-cache app shell =====
 precacheAndRoute(self.__WB_MANIFEST)
 
+// SW mới lên quyền NGAY, không nằm chờ tới khi đóng hết tab. Thiếu 2 dòng này thì
+// bản deploy mới bị kẹt ở trạng thái waiting, tab cũ vẫn được phục vụ index.html cũ
+// -> user phải hard refresh mới thấy code mới.
+self.addEventListener('install', () => {
+  self.skipWaiting()
+})
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim())
+})
+
 // ===== Runtime cache cho font/image =====
 registerRoute(
   ({ url }) => /\.(woff2?|ttf|eot|png|jpg|jpeg|svg|webp)$/.test(url.pathname),
