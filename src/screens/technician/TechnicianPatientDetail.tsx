@@ -10,11 +10,10 @@ import {
 } from "../../lib/technician";
 import { ProtocolView, parseProtocol, normLabel } from "../../components/ProtocolView";
 import CustomerProfileCard from "../../components/CustomerProfileCard";
-import CareStatusEditor from "../../components/CareStatusEditor";
 import { getCalendarResources, type CalendarResource } from "../../lib/calendar";
 
-// Hai chiều Trợ lý được đụng. Hằng cấp module vì prop `only` là mảng — inline sẽ đổi ref mỗi render.
-const TECHNICIAN_TAGS = ["debt_status"];
+// Tình trạng thanh toán KHÔNG còn ô gán tag riêng ở đây: nút gạt "Đã thanh toán đủ / Còn nợ"
+// trong khối chốt gói là nguồn duy nhất, backend tự đồng bộ tag debt_status theo số tiền.
 
 // Chi tiết khách điều trị: Trợ lý cập nhật phác đồ điều trị.
 // Nhật ký từng buổi/ảnh trước sau chuyển sang màn CSKH để hồ sơ điều trị nằm một chỗ.
@@ -190,11 +189,6 @@ export default function TechnicianPatientDetail({
       <div className="space-y-3 p-4 pb-28">
         {/* Hồ sơ khách Telesale nhập — CSKH dùng chung component này. */}
         <CustomerProfileCard customerId={patient.id} />
-
-        {/* Phân loại KH + tình trạng thanh toán — sửa ở ĐÂY (tab Lịch hẹn chỉ hiển thị).
-            Tag gắn ở khách/liệu trình nên CSKH kế thừa ngay; các chiều riêng của CSKH
-            (care_status / mức hài lòng) không hiện ở đây. */}
-        <CareStatusEditor customerId={patient.id} only={TECHNICIAN_TAGS} />
 
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <RecordBlock

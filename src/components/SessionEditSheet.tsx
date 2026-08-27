@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../lib/chipColor";
-import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock, Check } from "lucide-react";
+import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock, Check, Lock } from "lucide-react";
 import { updateCareSession, UNASSIGN, type CareTagValue, type TreatmentPhoto } from "../lib/customerCare";
 import { fileToBase64, type Session } from "../lib/technician";
 import { getCalendarResources, type CalendarResource } from "../lib/calendar";
@@ -65,6 +65,11 @@ export default function SessionEditSheet({
   }, [therapistName, therapists]);
   const effTherapistId = therapistId === undefined ? presetTherapistId : therapistId;
 
+  // Đã phân ở CEP (lễ tân check-in) hoặc lúc đặt buổi -> khoá, chỉ xem. Một vai chỉ có
+  // MỘT nơi được sửa; nếu không, hai bên ghi đè nhau và không biết ai đúng.
+  const therapistLocked = !!therapistName;
+  const doctorLocked = !!session?.doctorId;
+
   const existingPhotos = useMemo(() => {
     if (!session) return [];
     return session.photos.map((url, i) => ({ url, id: session.photoIds?.[i] ?? null }));
@@ -101,9 +106,10 @@ export default function SessionEditSheet({
       const res = await updateCareSession({
         appointmentId: session.appointmentId,
         startAt,
-        // bỏ trống = không đổi; UNASSIGN = gỡ gán
-        therapistResourceId: effTherapistId ?? UNASSIGN,
-        doctorResourceId: doctorId ?? UNASSIGN,
+        // bỏ trống (null) = không đổi; UNASSIGN = gỡ gán. Vai đã khoá thì không gửi gì
+        // — trước đây ĐTV do CEP gán không khớp được id theo tên nên bị gửi UNASSIGN, gỡ mất gán.
+        therapistResourceId: therapistLocked ? null : (effTherapistId ?? UNASSIGN),
+        doctorResourceId: doctorLocked ? null : (doctorId ?? UNASSIGN),
         note,
         photos: photos.length ? photos : null,
         removePhotoIds: removedIds.size ? [...removedIds] : null,
@@ -168,7 +174,14 @@ export default function SessionEditSheet({
             <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
               <UserRound size={14} /> Điều trị viên
             </div>
-            {therapists.length === 0 ? (
+            {therapistLocked ? (
+              <div className="flex items-center gap-2">
+                <span className={`${chipCls} bg-slate-100 text-slate-600`}>
+                  <Lock size={12} /> {therapistName}
+                </span>
+                <span className="text-[11.5px] text-slate-400">đã phân — đổi ở CEP</span>
+              </div>
+            ) : therapists.length === 0 ? (
               <div className="text-[12.5px] text-slate-400">Chưa có ĐTV trong danh mục tài nguyên.</div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -203,6 +216,14 @@ export default function SessionEditSheet({
             <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
               <Stethoscope size={14} /> Bác sĩ khám
             </div>
+            {doctorLocked ? (
+              <div className="flex items-center gap-2">
+                <span className={`${chipCls} bg-slate-100 text-slate-600`}>
+                  <Lock size={12} /> {session?.doctorName || "Đã phân"}
+                </span>
+                <span className="text-[11.5px] text-slate-400">đã phân — đổi ở CEP</span>
+              </div>
+            ) : (
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -228,6 +249,7 @@ export default function SessionEditSheet({
                 );
               })}
             </div>
+            )}
           </div>
 
           {skinValues.length > 0 && session && (

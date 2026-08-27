@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { chipStyle } from "../lib/chipColor";
-import { Pencil, X, AlertOctagon, Check } from "lucide-react";
+import { Pencil, X, AlertOctagon, Check, Lock } from "lucide-react";
 import { fetchCareTagOptions, setCareTag, createComplainTicket, type CareTagGroup } from "../lib/customerCare";
 
 // đọc 1 cờ boolean trong metadata jsonb (isComplain/isIncident/…)
@@ -12,6 +12,11 @@ function metaFlag(metadata: string | null | undefined, key: string): boolean {
     return false;
   }
 }
+
+// Chiều KẾ THỪA từ bộ phận trước — CSKH chỉ xem, không gán tay:
+//  · customer_tier / customer_lifecycle: hệ thống tự tính (gói + số buổi đã làm)
+//  · debt_status: nút gạt "Đã thanh toán đủ / Còn nợ" bên Trợ lý là nguồn duy nhất
+const INHERITED = ["customer_tier", "customer_lifecycle", "debt_status"];
 
 const SEVERITIES: { key: string; label: string }[] = [
   { key: "low", label: "Nhẹ" },
@@ -63,10 +68,23 @@ export default function CareStatusEditor({
   // `only` lọc ở client: careTagOptions trả sẵn mọi chiều, không cần thêm tham số BE.
   const groups = useMemo(
     () => {
-      const editable = allGroups?.filter((g) => g.groupSlug !== "customer_tier" && g.groupSlug !== "customer_lifecycle") ?? allGroups;
+      const editable = allGroups?.filter((g) => !INHERITED.includes(g.groupSlug)) ?? allGroups;
       return editable && only ? editable.filter((g) => only.includes(g.groupSlug)) : editable;
     },
     [allGroups, only],
+  );
+
+  // Chiều kế thừa: hiện ngay khi mở app, CSKH không chọn lại.
+  const inherited = useMemo(
+    () =>
+      (allGroups ?? [])
+        .filter((g) => INHERITED.includes(g.groupSlug))
+        .map((g) => {
+          const v = g.values.find((x) => x.slug === g.current);
+          return v ? { key: g.groupSlug, label: g.groupName, name: v.name, color: v.color || "#94a3b8" } : null;
+        })
+        .filter(Boolean) as { key: string; label: string; name: string; color: string }[],
+    [allGroups],
   );
 
   // Giá trị đang chọn của từng chiều → hàng tóm tắt (dot + chữ).
@@ -128,7 +146,7 @@ export default function CareStatusEditor({
   }
 
   if (!groups) return <div className="rounded-2xl border border-slate-100 bg-white p-4 text-[13px] text-slate-400 shadow-sm">Đang tải trạng thái…</div>;
-  if (!groups.length) return null;
+  if (!groups.length && !inherited.length) return null;
 
   return (
     <>
@@ -136,13 +154,32 @@ export default function CareStatusEditor({
       <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="text-[13px] font-bold text-slate-700">{title}</div>
-          <button
-            onClick={() => setSheetOpen(true)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
-          >
-            <Pencil size={13} /> Sửa
-          </button>
+          {groups.length > 0 && (
+            <button
+              onClick={() => setSheetOpen(true)}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
+            >
+              <Pencil size={13} /> Sửa
+            </button>
+          )}
         </div>
+
+        {/* Kế thừa từ bộ phận trước (phân loại khách · tình trạng thanh toán): chỉ xem */}
+        {inherited.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {inherited.map((s) => (
+              <span
+                key={s.key}
+                title={`${s.label} — kế thừa, không sửa ở đây`}
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-semibold"
+                style={chipStyle(s.color)}
+              >
+                <Lock size={11} />
+                {s.name}
+              </span>
+            ))}
+          </div>
+        )}
         {summary.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {summary.map((s) => (
@@ -156,9 +193,9 @@ export default function CareStatusEditor({
               </span>
             ))}
           </div>
-        ) : (
+        ) : groups.length > 0 ? (
           <div className="mt-1.5 text-[13px] text-slate-400">Chưa đặt trạng thái — bấm “Sửa” để gán.</div>
-        )}
+        ) : null}
       </div>
 
       {/* Bottom sheet: đầy đủ chip từng chiều để chọn */}
