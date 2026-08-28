@@ -78,7 +78,9 @@ export interface Patient {
 
 export interface Session {
   appointmentId: string;
-  sessionNumber: number | null;
+  sessionNumber: number | null;  // số buổi TRONG liệu trình (server đếm lại theo courseId)
+  courseId?: string | null;      // null = buổi cũ chưa gắn liệu trình
+  courseName?: string | null;
   dateIso: string;
   status: string;        // pending|confirmed|checked_in|completed|cancelled|no_show|...
   source: string;        // telesale|customer_care|walkin|system|self_service
@@ -139,7 +141,7 @@ export async function fetchMyPatients(): Promise<Patient[]> {
 const PATIENT_SESSIONS = `
   query PatientSessions($customerId: UUID!) {
     patientSessions(customerId: $customerId) {
-      appointmentId sessionNumber dateIso status source note photos
+      appointmentId sessionNumber courseId courseName dateIso status source note photos
     }
   }
 `;
@@ -250,7 +252,7 @@ export async function saveTreatmentRecord(input: {
   totalSessions?: number | null;
   packagePrice?: number | null;
   paidAmount?: number | null;
-  debtAmount?: number | null;
+  // Không gửi debtAmount: server suy ra packagePrice - paidAmount.
   nextPaymentDate?: string | null;
 }): Promise<{ success: boolean }> {
   const data = await gql<{ saveTreatmentRecord: { success: boolean } }>(

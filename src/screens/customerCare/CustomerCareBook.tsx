@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
 import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera, Wallet, Mic } from "lucide-react";
-import { completeSession, fileToBase64, type Patient } from "../../lib/technician";
+import { completeSession, fileToBase64, type Patient, type Session } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
 import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, saveCskhNote, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
 import CareStatusEditor from "../../components/CareStatusEditor";
@@ -102,6 +102,19 @@ export default function CustomerCareBook({
   const [careOpen, setCareOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [openSessions, setOpenSessions] = useState<Set<string>>(() => new Set());
+  // Gom buổi theo liệu trình — khách mua gói mới thì số buổi đếm lại từ 1, để chung
+  // một danh sách sẽ đọc thành "Buổi 9, 10…" của gói 8 buổi. Server đã trả theo thứ tự
+  // gói cũ trước nên chỉ cần gom tuần tự, không sắp xếp lại.
+  const sessionGroups = useMemo(() => {
+    const groups: { key: string; name: string; sessions: Session[] }[] = [];
+    for (const s of care?.sessions ?? []) {
+      const key = s.courseId ?? "__no_course__";
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) last.sessions.push(s);
+      else groups.push({ key, name: s.courseName || "Liệu trình", sessions: [s] });
+    }
+    return groups;
+  }, [care]);
   const [skinValues, setSkinValues] = useState<CareTagValue[]>([]);
   const [skinBusy, setSkinBusy] = useState<string | null>(null); // appointmentId đang lưu
   const [editAppt, setEditAppt] = useState<string | null>(null); // CV-14: buổi đang mở sheet cập nhật
@@ -492,13 +505,18 @@ export default function CustomerCareBook({
             </button>
             {careOpen && (
               <div className="space-y-3 border-t border-slate-100 p-4">
-                {care.sessions.length > 0 && (
-                  <div>
+                {sessionGroups.map((grp) => (
+                  <div key={grp.key}>
                     <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-500">
-                      <CalendarClock size={14} /> Các buổi
+                      <CalendarClock size={14} />
+                      {/* Chỉ có 1 gói thì giữ nhãn cũ; nhiều gói mới nêu tên để phân biệt. */}
+                      {sessionGroups.length > 1 ? grp.name : "Các buổi"}
+                      {sessionGroups.length > 1 && (
+                        <span className="font-semibold text-slate-400">· {grp.sessions.length} buổi</span>
+                      )}
                     </div>
                     <div className="space-y-2">
-                      {care.sessions.map((s, idx) => {
+                      {grp.sessions.map((s, idx) => {
                         const st = SESSION_STATUS[s.status] ?? { label: s.status || "—", cls: "bg-slate-100 text-slate-500" };
                         const open = openSessions.has(s.appointmentId);
                         return (
@@ -592,7 +610,7 @@ export default function CustomerCareBook({
                       })}
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>

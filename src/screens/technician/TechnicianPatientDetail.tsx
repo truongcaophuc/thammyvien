@@ -44,13 +44,14 @@ export default function TechnicianPatientDetail({
   const [therapists, setTherapists] = useState<CalendarResource[]>([]);
 
   // --- Chốt gói + công nợ (mục 5/6 note tester) ---
-  const [deal, setDeal] = useState<"closed" | "open" | null>(
-    patient.dealStatus === "closed" || patient.dealStatus === "open" ? patient.dealStatus : null,
+  // Mặc định "Đã chốt": phần lớn ca vào màn này là khách đã đồng ý mua, ĐTV chỉ cần
+  // bấm Lưu. Ca chưa chốt là ngoại lệ nên để ĐTV chủ động đổi sang "Chưa chốt".
+  const [deal, setDeal] = useState<"closed" | "open">(
+    patient.dealStatus === "open" ? "open" : "closed",
   );
   const [dealNote, setDealNote] = useState("");
   const [payFull, setPayFull] = useState(!patient.hasDebt);
   const [paid, setPaid] = useState(patient.paidAmount ? fmtMoney(patient.paidAmount) : "");
-  const [debt, setDebt] = useState(patient.debtAmount ? fmtMoney(patient.debtAmount) : "");
   const [nextPay, setNextPay] = useState(patient.nextPaymentDate || "");
   const [recordings, setRecordings] = useState<TreatmentPhotoInput[]>([]);
   const [savedRecordings, setSavedRecordings] = useState<string[]>([]);
@@ -58,13 +59,19 @@ export default function TechnicianPatientDetail({
   const hasCareAgent = !!patient.careAgentId || !!patient.careAgentName;
   const showCareAgentInDeal = hasCareAgent;
   const lockDealChoice = patient.dealStatus === "closed";
+  // Còn nợ = giá gói − đã thanh toán, KHÔNG cho nhập tay: trước đây nhập cả hai ô nên
+  // lưu được số vô lý (gói 100tr, trả 100tr, nợ 2tr).
+  const priceNum = parseMoney(packagePrice) ?? 0;
+  const paidNum = parseMoney(paid) ?? 0;
+  const debtNum = Math.max(0, priceNum - paidNum);
+  const debt = debtNum ? fmtMoney(debtNum) : "";
   const dealDirty =
     deal !== (patient.dealStatus ?? null) ||
     recordings.length > 0 ||
     dealNote.trim() !== "" ||
     payFull !== !patient.hasDebt ||
     paid !== (patient.paidAmount ? fmtMoney(patient.paidAmount) : "") ||
-    debt !== (patient.debtAmount ? fmtMoney(patient.debtAmount) : "") ||
+    debtNum !== (patient.debtAmount ?? 0) ||
     nextPay !== (patient.nextPaymentDate || "");
 
   // Gộp 4 field -> text `Nhãn: value` (nguồn để lưu).
@@ -80,10 +87,15 @@ export default function TechnicianPatientDetail({
   const setField = (key: keyof ProtoFields, v: string) => setFields((p) => ({ ...p, [key]: v }));
 
   // Số buổi đã hoàn thành — ưu tiên đếm từ sessions để cập nhật ngay sau khi hoàn thành 1 buổi.
-  const doneCount = useMemo(
-    () => (sessions ? sessions.filter((s) => s.status === "completed").length : patient.sessionDone),
-    [sessions, patient.sessionDone],
-  );
+  // patientSessions trả buổi của MỌI liệu trình (gói cũ trước, gói mới sau) trong khi
+  // sessionTotal là của gói đang chạy — đếm tất thì khách mua gói 2 hiện "12/8".
+  const doneCount = useMemo(() => {
+    if (!sessions) return patient.sessionDone;
+    const currentCourse = sessions.length ? sessions[sessions.length - 1].courseId ?? null : null;
+    return sessions.filter(
+      (s) => s.status === "completed" && (s.courseId ?? null) === currentCourse,
+    ).length;
+  }, [sessions, patient.sessionDone]);
 
   const anyDirty = protocolDirty || packagePriceDirty || dealDirty;
 
@@ -129,25 +141,41 @@ export default function TechnicianPatientDetail({
       setFormMsg("Vui lòng nhập lý do chưa chốt trước khi lưu hồ sơ.");
       return;
     }
+    // Công nợ chỉ có nghĩa khi biết giá gói; số đã thu nằm trong [0, giá gói] —
+    // cho phép 0 vì khách chốt gói mà chưa đưa đồng nào là có thật (nợ toàn bộ).
+    if (deal === "closed" && priceNum <= 0) {
+      setFormMsg("Chốt gói thì phải nhập giá gói.");
+      return;
+    }
+    if (deal === "closed" && !payFull && paidNum > priceNum) {
+      setFormMsg("Số đã thanh toán không được lớn hơn giá gói.");
+      return;
+    }
+    if (deal === "closed" && !payFull && debtNum <= 0) {
+      setFormMsg("Đã trả bằng giá gói nên không còn nợ — chọn \"Đã thanh toán đủ\".");
+      return;
+    }
     if (deal === "closed" && !payFull && !nextPay) {
       setFormMsg("Còn công nợ thì phải có ngày hẹn trả tiếp.");
       return;
     }
     const closing = deal === "closed";
-    const dealStatusToSave = closing && hasCareAgent ? null : deal;
     setSavingProto(true);
     try {
       const res = await saveTreatmentRecord({
         customerId: patient.id,
         protocol: protocolText.trim(),
-        dealStatus: dealStatusToSave,
+        // Luôn gửi kết quả chốt, kể cả khi khách đã có CSKH: trước đây gửi null nên
+        // DealStatus không bao giờ được lưu -> lần vào sau không khoá được lựa chọn.
+        // Server chỉ bàn giao hồ sơ khi trạng thái thật sự đổi nên không bị push lặp.
+        dealStatus: deal,
         dealNote: deal === "open" ? dealNote.trim() : undefined,
         recordings: recordings.length ? recordings : undefined,
         serviceName: fields.tenLieuTrinh.trim() || undefined,
         packagePrice: parseMoney(packagePrice) ?? undefined,
         paidAmount: closing ? (payFull ? parseMoney(packagePrice) : parseMoney(paid)) : undefined,
-        debtAmount: closing ? (payFull ? 0 : parseMoney(debt)) : undefined,
-        nextPaymentDate: closing && !payFull ? nextPay || null : undefined,
+        // Thanh toán đủ -> xoá hạn trả tiếp, không để treo ngày hẹn cũ.
+        nextPaymentDate: closing ? (payFull ? null : nextPay || null) : undefined,
       });
       if (res.success) {
         setSavedProtocol(protocolText.trim());
@@ -212,8 +240,8 @@ export default function TechnicianPatientDetail({
           )}
           {!lockDealChoice && (
             <div className="grid grid-cols-2 gap-2">
-              <SegBtn active={deal === "closed"} tone="brand" onClick={() => setDeal(deal === "closed" ? null : "closed")}>Đã chốt</SegBtn>
-              <SegBtn active={deal === "open"} tone="brand" onClick={() => setDeal(deal === "open" ? null : "open")}>Chưa chốt</SegBtn>
+              <SegBtn active={deal === "closed"} tone="brand" onClick={() => setDeal("closed")}>Đã chốt</SegBtn>
+              <SegBtn active={deal === "open"} tone="brand" onClick={() => setDeal("open")}>Chưa chốt</SegBtn>
             </div>
           )}
 
@@ -294,13 +322,18 @@ export default function TechnicianPatientDetail({
                 <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
                   {payFull
                     ? "Hồ sơ sẽ kế thừa trạng thái đã thanh toán đủ cho CSKH."
-                    : "Bắt buộc nhập đã trả, còn nợ và ngày hẹn trả tiếp."}
+                    : "Nhập số đã trả và ngày hẹn trả tiếp; còn nợ tự tính theo giá gói."}
                 </p>
                 {!payFull && (
                   <div className="mt-3 space-y-2.5">
                     <div className="grid grid-cols-2 gap-2.5">
-                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(moneyDigits(v))} onFocus={() => setPaid(moneyDigits(paid))} onBlur={() => setPaid(fmtMoneyInput(paid))} inputMode="numeric" placeholder="20.000.000" />
-                      <ProtoInput label="Còn nợ" value={debt} onChange={(v) => setDebt(moneyDigits(v))} onFocus={() => setDebt(moneyDigits(debt))} onBlur={() => setDebt(fmtMoneyInput(debt))} inputMode="numeric" placeholder="28.000.000" />
+                      <ProtoInput label="Đã thanh toán" value={paid} onChange={(v) => setPaid(moneyDigits(v))} onFocus={() => setPaid(moneyDigits(paid))} onBlur={() => setPaid(fmtMoneyInput(paid))} inputMode="numeric" />
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Còn nợ</label>
+                        <div className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-[13.5px] font-semibold leading-relaxed text-slate-500">
+                          {debt || "0"}
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Ngày hẹn trả tiếp *</label>
@@ -403,12 +436,7 @@ export default function TechnicianPatientDetail({
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-200 py-3 text-[15px] font-bold text-white shadow-xl shadow-black/10 transition-colors disabled:cursor-not-allowed disabled:opacity-100 enabled:bg-brand-600 enabled:hover:bg-brand-700"
         >
           {savingAny ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
-          {savingAny
-            ? "Đang lưu…"
-            : deal === "closed" && hasCareAgent ? "Lưu hồ sơ"
-            : deal === "closed" ? "Lưu & chuyển pool CSKH"
-            : deal === "open" ? "Lưu & trả hồ sơ về Telesale"
-            : "Lưu kết quả"}
+          {savingAny ? "Đang lưu…" : "Lưu"}
         </button>
       </div>
 
@@ -670,7 +698,7 @@ function ProtoInput({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  placeholder: string;
+  placeholder?: string;
   required?: boolean;
   rows?: number;
   onBlur?: () => void;

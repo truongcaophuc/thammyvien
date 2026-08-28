@@ -27,7 +27,7 @@ const CARE_TREATMENT = `
       proofPhotos
       cskhNote cskhNoteBy cskhNoteAt
       packagePrice paidAmount debtAmount nextPaymentDate purchaseDate dealNote recordings
-      sessions { appointmentId sessionNumber dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
+      sessions { appointmentId sessionNumber courseId courseName dateIso status source note photos photoIds skinSlug skinName skinColor doctorId doctorName therapistName }
     }
   }
 `;
