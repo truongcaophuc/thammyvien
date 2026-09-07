@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Search, MessageCircle, Star, Clock } from "lucide-react";
-import { fetchMyPatients, type Patient } from "../../lib/technician";
-import { TierChip, LifecycleChip, PaymentChip, sortPatients } from "../../components/PatientTags";
+import {
+  fetchMyPatientsPage,
+  PATIENTS_PAGE_SIZE,
+  type Patient,
+  type PatientFacet,
+} from "../../lib/technician";
+import { TierChip, LifecycleChip, PaymentChip } from "../../components/PatientTags";
 import { chipStyle, chipDot } from "../../lib/chipColor";
 
 // ISO -> dd/mm/yyyy (bỏ giờ). Rỗng/không hợp lệ -> "—".
@@ -42,52 +47,120 @@ function colorOf(s: string): string {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return AVA_COLORS[h % AVA_COLORS.length];
 }
+// Một trang đã tải, kèm bộ lọc sinh ra nó. So key với bộ lọc hiện tại là biết dữ liệu còn
+// dùng được hay đang chờ tải lại — không cần thêm state "loading" riêng.
+interface PageState {
+  key: string;
+  items: Patient[];
+  total: number;
+  facets: PatientFacet[];
+  exhausted: boolean;   // trang cuối trả về ít hơn PATIENTS_PAGE_SIZE -> hết khách
+}
+
 export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: Patient) => void }) {
-  const [patients, setPatients] = useState<Patient[] | null>(null);
   const [q, setQ] = useState("");
   const [tierFilter, setTierFilter] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
+  // Tìm kiếm chạy ở SERVER nên phải hoãn: gõ 1 ký tự = 1 query. 300ms là mức không thấy trễ
+  // khi gõ mà vẫn gộp được cả cụm từ thành một lần gọi.
+  const [qDebounced, setQDebounced] = useState("");
   useEffect(() => {
-    let cancelled = false;
-    fetchMyPatients().then((ps) => { if (!cancelled) setPatients(ps); });
-    // Live: push đến (SW) / app hiện lại -> refetch danh sách tại chỗ (không spinner).
-    const refresh = () => fetchMyPatients().then((ps) => { if (!cancelled) setPatients(ps); }).catch(() => {});
+    const t = setTimeout(() => setQDebounced(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Dữ liệu mang theo BỘ LỌC đã sinh ra nó. Nhờ vậy "đang tải trang 1" là thứ SUY RA được
+  // (key lệch bộ lọc hiện tại) chứ không phải một setState(null) chạy trong effect — cách đó
+  // tạo thêm một vòng render thừa mỗi lần đổi bộ lọc.
+  const [page, setPage] = useState<PageState | null>(null);
+  const filterKey = `${qDebounced}|${tierFilter ?? ""}`;
+  const fresh = page && page.key === filterKey ? page : null;   // null = chưa có dữ liệu cho bộ lọc này
+
+  // Chống race: đổi bộ lọc liên tục thì phản hồi cũ có thể về SAU phản hồi mới và ghi đè lên.
+  // Mỗi lần tải mang một số thứ tự, chỉ kết quả của lần mới nhất được nhận.
+  const runId = useRef(0);
+
+  const loadFirstPage = useCallback(() => {
+    const my = ++runId.current;
+    fetchMyPatientsPage({ skip: 0, take: PATIENTS_PAGE_SIZE, search: qDebounced, tier: tierFilter })
+      .then((p) => {
+        if (my !== runId.current) return;
+        setPage({
+          key: filterKey,
+          items: p.items,
+          total: p.total,
+          facets: p.facets,
+          exhausted: p.items.length < PATIENTS_PAGE_SIZE,
+        });
+      })
+      .catch(() => {
+        if (my !== runId.current) return;
+        setPage({ key: filterKey, items: [], total: 0, facets: [], exhausted: true });
+      });
+  }, [filterKey, qDebounced, tierFilter]);
+
+  // Đổi từ khoá / chip -> luôn quay về trang 1.
+  useEffect(() => { loadFirstPage(); }, [loadFirstPage]);
+
+  // Live: push đến (SW) / app hiện lại -> nạp lại trang 1.
+  // Cố ý KHÔNG giữ các trang đã cuộn: thứ tự trên server đã đổi (khách vừa sửa nhảy lên đầu)
+  // nên ghép trang cũ vào sẽ ra danh sách lẫn lộn, có khách xuất hiện hai lần.
+  useEffect(() => {
+    const refresh = () => loadFirstPage();
     const onVis = () => { if (document.visibilityState === "visible") refresh(); };
     window.addEventListener("sw-push", refresh);
     document.addEventListener("visibilitychange", onVis);
     return () => {
-      cancelled = true;
       window.removeEventListener("sw-push", refresh);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [loadFirstPage]);
 
-  // Sắp xếp lại ở client cho khớp backend: khách vừa sửa phác đồ nhảy lên đầu ngay
-  // cả khi list đang là bản cache (chưa refetch xong).
-  const filtered = sortPatients(patients ?? []).filter((p) => {
-    if (tierFilter && p.tierName !== tierFilter && p.lifecycleName !== tierFilter) return false;
-    const hay = (p.name + " " + p.phone + " " + p.service).toLowerCase();
-    return !q.trim() || hay.includes(q.trim().toLowerCase());
-  });
+  const loadMore = useCallback(() => {
+    if (loadingMore || !fresh || fresh.exhausted) return;
+    const my = runId.current;
+    setLoadingMore(true);
+    fetchMyPatientsPage({ skip: fresh.items.length, take: PATIENTS_PAGE_SIZE, search: qDebounced, tier: tierFilter })
+      .then((p) => {
+        if (my !== runId.current) return;   // bộ lọc đã đổi giữa chừng -> bỏ trang này
+        setPage((prev) => (prev && prev.key === filterKey
+          ? { ...prev, items: [...prev.items, ...p.items], exhausted: p.items.length < PATIENTS_PAGE_SIZE }
+          : prev));
+      })
+      // Hạ cờ VÔ ĐIỀU KIỆN: nếu chỉ hạ khi còn đúng lượt, một lần đổi bộ lọc giữa chừng sẽ
+      // treo cờ vĩnh viễn và loadMore() từ đó về sau luôn thoát sớm — cuộn tải tiếp chết hẳn.
+      .catch(() => {})
+      .finally(() => setLoadingMore(false));
+  }, [loadingMore, fresh, filterKey, qDebounced, tierFilter]);
 
-  // Chip lọc gộp cả hai chiều tự động.
+  // Cuộn gần chạm đáy thì tự tải tiếp (không cần bấm nút).
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadMore(); }, {
+      rootMargin: "300px",   // tải trước khi khách nhìn thấy đáy
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loadMore]);
+
+  // Server đã lọc + sắp xếp; client chỉ hiển thị đúng thứ tự nhận được. KHÔNG sort lại ở đây —
+  // sort cục bộ trên vài trang đã tải sẽ đảo chỗ khách so với trang chưa tải.
+  const list = fresh?.items ?? [];
+  // Cùng lý do với chip: giữ tổng cũ trong lúc tải để số trên "Tất cả" không nhảy về 0.
+  const total = page?.total ?? 0;
+
+  // Chip lọc: số đếm lấy từ server (toàn bộ tập khách), thứ tự hiển thị vẫn do app quyết.
+  // Giữ chip của lần tải trước trong lúc đang tải bộ lọc mới -> hàng chip không nhấp nháy.
   const tierChips = useMemo(() => {
     const ORDER = ["KH mới", "KH cũ", "Thường", "VIP"];
-    const m = new Map<string, { count: number; color: string }>();
-    (patients ?? []).forEach((p) => {
-      const values = [
-        p.lifecycleName ? { name: p.lifecycleName, color: p.lifecycleColor } : null,
-        p.tierName ? { name: p.tierName, color: p.tierColor } : null,
-      ].filter(Boolean) as { name: string; color?: string | null }[];
-      values.forEach((v) => {
-        const e = m.get(v.name) || { count: 0, color: v.color || "#94a3b8" };
-        e.count++;
-        m.set(v.name, e);
-      });
-    });
     const rank = (s: string) => (ORDER.indexOf(s) < 0 ? 99 : ORDER.indexOf(s));
-    return [...m.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([label, e]) => ({ label, ...e }));
-  }, [patients]);
+    return [...(page?.facets ?? [])]
+      .sort((a, b) => rank(a.name) - rank(b.name))
+      .map((f) => ({ label: f.name, count: f.count, color: f.color || "#94a3b8" }));
+  }, [page]);
 
   return (
     <div className="min-h-full bg-[#eef0f5]">
@@ -111,7 +184,7 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
                 !tierFilter ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-500"
               }`}
             >
-              Tất cả <span className="opacity-70">{(patients ?? []).length}</span>
+              Tất cả <span className="opacity-70">{total}</span>
             </button>
             {tierChips.map((c) => {
               const on = tierFilter === c.label;
@@ -132,12 +205,12 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
       </header>
 
       <div className="space-y-2.5 p-4">
-        {patients === null ? (
+        {fresh === null ? (
           <div className="flex justify-center py-16 text-slate-400"><Loader2 size={26} className="animate-spin" /></div>
-        ) : filtered.length === 0 ? (
+        ) : list.length === 0 ? (
           <div className="py-16 text-center text-[13.5px] text-slate-400">Không có khách phù hợp.</div>
         ) : (
-          filtered.map((p) => (
+          list.map((p) => (
             <button
               key={p.id}
               onClick={() => onOpenPatient(p)}
@@ -179,6 +252,17 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
               </div>
             </button>
           ))
+        )}
+
+        {/* Mốc cuộn: lọt vào tầm nhìn (sớm 300px) thì nạp trang tiếp theo. */}
+        {fresh !== null && !fresh.exhausted && <div ref={sentinel} className="h-1" />}
+        {loadingMore && (
+          <div className="flex justify-center py-4 text-slate-400">
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+        {fresh !== null && fresh.exhausted && list.length >= PATIENTS_PAGE_SIZE && (
+          <div className="py-4 text-center text-[12px] text-slate-400">Đã hết danh sách</div>
         )}
       </div>
     </div>

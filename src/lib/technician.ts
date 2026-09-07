@@ -137,6 +137,57 @@ export async function fetchMyPatients(): Promise<Patient[]> {
   return data.myPatients;
 }
 
+// ===== Danh sách khách PHÂN TRANG (thay myPatients ở màn danh sách) =====
+// Danh sách đã lên hàng trăm khách nên tìm kiếm + đếm chip phải chạy ở server: nếu để client
+// lọc như trước thì nó chỉ thấy trang đang tải, gõ tên khách chưa cuộn tới sẽ ra "không có khách".
+export interface PatientFacet {
+  name: string;             // nhãn chip: VIP / Thường / KH mới / KH cũ
+  color?: string | null;
+  count: number;
+}
+export interface MyPatientsPage {
+  items: Patient[];
+  total: number;            // tổng khách, KHÔNG áp tìm kiếm/chip (số trên chip "Tất cả")
+  facets: PatientFacet[];   // đếm từng chip, cũng trên toàn bộ tập khách
+}
+
+export const PATIENTS_PAGE_SIZE = 20;
+
+const MY_PATIENTS_PAGE = `
+  query MyPatientsPage($skip: Int, $take: Int, $search: String, $tier: String) {
+    myPatientsPage(skip: $skip, take: $take, search: $search, tier: $tier) {
+      total
+      facets { name color count }
+      items {
+        id name phone service sessionDone sessionTotal lastCareAt
+        zaloGroupUrl qaScore needCareToday protocol
+        tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
+        dealStatus packagePrice paidAmount debtAmount nextPaymentDate hasDebt
+        debtTagSlug debtTagName debtTagColor
+        careAgentId careAgentName
+        lastUpdatedAt nextAppointmentAt
+      }
+    }
+  }
+`;
+
+export async function fetchMyPatientsPage(opts: {
+  skip?: number;
+  take?: number;
+  search?: string;
+  tier?: string | null;
+} = {}): Promise<MyPatientsPage> {
+  const data = await gql<{ myPatientsPage: MyPatientsPage }>(MY_PATIENTS_PAGE, {
+    skip: opts.skip ?? 0,
+    take: opts.take ?? PATIENTS_PAGE_SIZE,
+    // Chuỗi rỗng cũng gửi null để server khỏi ghép WHERE ILIKE '%%' vô ích.
+    search: opts.search?.trim() ? opts.search.trim() : null,
+    tier: opts.tier || null,
+  });
+  const p = data.myPatientsPage;
+  return { items: p.items ?? [], total: p.total ?? 0, facets: p.facets ?? [] };
+}
+
 // Các buổi của khách + nhật ký + ảnh từng buổi.
 const PATIENT_SESSIONS = `
   query PatientSessions($customerId: UUID!) {
@@ -228,9 +279,26 @@ export async function fetchTechnicianAppointments(
   }
 }
 
+// Deep-link mở thẳng hồ sơ khách (/technician/patient/{id} từ tab Lịch hẹn, từ thông báo
+// check-in). Trước đây hàm này tải cả danh sách rồi .find() — có phân trang thì danh sách chỉ
+// còn 20 khách nên cách đó luôn trượt; giờ hỏi server đúng 1 khách theo id.
+const PATIENT_BY_ID = `
+  query PatientById($customerId: UUID!) {
+    patientById(customerId: $customerId) {
+      id name phone service sessionDone sessionTotal lastCareAt
+      zaloGroupUrl qaScore needCareToday protocol
+      tierSlug tierName tierColor lifecycleSlug lifecycleName lifecycleColor
+      dealStatus packagePrice paidAmount debtAmount nextPaymentDate hasDebt
+      debtTagSlug debtTagName debtTagColor
+      careAgentId careAgentName
+      lastUpdatedAt nextAppointmentAt
+    }
+  }
+`;
+
 export async function fetchPatientById(id: string): Promise<Patient | null> {
-  const list = await fetchMyPatients();
-  return list.find((p) => p.id === id) ?? null;
+  const data = await gql<{ patientById: Patient | null }>(PATIENT_BY_ID, { customerId: id });
+  return data.patientById ?? null;
 }
 
 const SAVE_TREATMENT = `

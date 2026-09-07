@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Users, CheckCircle2, Wallet, DoorOpen, ChevronRight, RotateCw, Bell } from "lucide-react";
-import { fetchTechnicianOverview, fetchMyPatients, fetchTreatmentNotifications, type TechnicianOverview, type Patient } from "../../lib/technician";
+import { fetchTechnicianOverview, fetchMyPatientsPage, fetchTreatmentNotifications, type TechnicianOverview, type Patient } from "../../lib/technician";
 import { TierChip, LifecycleChip, PaymentChip } from "../../components/PatientTags";
 import { countUnread } from "../../lib/notifications";
 import NotificationSheet from "../../modals/NotificationSheet";
@@ -37,7 +37,8 @@ export default function TechnicianOverviewScreen({
     setData(null);
     setPatients(null);
     fetchTechnicianOverview().then(setData).catch(() => setErr(true));
-    fetchMyPatients().then(setPatients).catch(() => setPatients([]));
+    // Chỉ xin đúng 5 khách cho khối preview bên dưới (trước đây kéo cả danh sách rồi slice(0,5)).
+    fetchMyPatientsPage({ take: 5 }).then((p) => setPatients(p.items)).catch(() => setPatients([]));
     fetchTreatmentNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -46,7 +47,7 @@ export default function TechnicianOverviewScreen({
   // khi push đến (SW báo) hoặc khi app hiện lại — để list/thẻ cập nhật theo, không cần reload.
   const refresh = useCallback(() => {
     fetchTechnicianOverview().then(setData).catch(() => {});
-    fetchMyPatients().then(setPatients).catch(() => {});
+    fetchMyPatientsPage({ take: 5 }).then((p) => setPatients(p.items)).catch(() => {});
     fetchTreatmentNotifications().then((n) => setUnread(countUnread(n))).catch(() => {});
   }, []);
   useEffect(() => {
