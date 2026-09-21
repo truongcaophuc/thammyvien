@@ -50,7 +50,7 @@ export default function Sheet({
             <X size={20} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto py-3">{children}</div>
+        <div className="no-scrollbar flex-1 overflow-y-auto py-3">{children}</div>
         {footer && (
           <div className="border-t border-slate-100 bg-white px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
             {footer}

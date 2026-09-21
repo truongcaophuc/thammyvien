@@ -11,6 +11,7 @@ import {
 import { ProtocolView, parseProtocol, normLabel } from "../../components/ProtocolView";
 import CustomerProfileCard from "../../components/CustomerProfileCard";
 import { getCalendarResources, type CalendarResource } from "../../lib/calendar";
+import DatePickerSheet, { DatePickerButton } from "../../components/DatePickerSheet";
 
 // Tình trạng thanh toán KHÔNG còn ô gán tag riêng ở đây: nút gạt "Đã thanh toán đủ / Còn nợ"
 // trong khối chốt gói là nguồn duy nhất, backend tự đồng bộ tag debt_status theo số tiền.
@@ -53,6 +54,7 @@ export default function TechnicianPatientDetail({
   const [payFull, setPayFull] = useState(!patient.hasDebt);
   const [paid, setPaid] = useState(patient.paidAmount ? fmtMoney(patient.paidAmount) : "");
   const [nextPay, setNextPay] = useState(patient.nextPaymentDate || "");
+  const [nextPayPickerOpen, setNextPayPickerOpen] = useState(false);
   const [recordings, setRecordings] = useState<TreatmentPhotoInput[]>([]);
   const [savedRecordings, setSavedRecordings] = useState<string[]>([]);
   const [formMsg, setFormMsg] = useState("");
@@ -337,11 +339,11 @@ export default function TechnicianPatientDetail({
                     </div>
                     <div>
                       <label className="mb-1.5 block text-[12px] font-bold text-slate-600">Ngày hẹn trả tiếp *</label>
-                      <input
-                        type="date"
+                      <DatePickerButton
                         value={nextPay}
-                        onChange={(e) => { setNextPay(e.target.value); if (formMsg) setFormMsg(""); }}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13.5px] text-slate-800 outline-none focus:border-brand-400"
+                        placeholder="Chọn ngày"
+                        onClick={() => setNextPayPickerOpen(true)}
+                        className="w-full border border-slate-200 bg-white py-2.5 text-[13.5px]"
                       />
                     </div>
                     {formMsg && (
@@ -471,6 +473,19 @@ export default function TechnicianPatientDetail({
         </div>
       )}
 
+      {nextPayPickerOpen && (
+        <DatePickerSheet
+          value={nextPay}
+          min={localTodayIso()}
+          title="Ngày hẹn trả tiếp"
+          onChange={(value) => {
+            setNextPay(value);
+            if (formMsg) setFormMsg("");
+          }}
+          onClose={() => setNextPayPickerOpen(false)}
+        />
+      )}
+
     </div>
   );
 }
@@ -486,6 +501,10 @@ function fmtMoneyInput(v: string): string {
 }
 function moneyDigits(v: string): string {
   return (v || "").replace(/\D/g, "");
+}
+function localTodayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 /** "48.000.000" -> 48000000; rỗng -> null (backend hiểu là không đổi). */
 function parseMoney(v: string): number | null {
@@ -758,7 +777,7 @@ function ProtoSelect({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/10">
+        <div className="no-scrollbar absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/10">
           <button
             type="button"
             onClick={() => { onChange(""); setOpen(false); }}

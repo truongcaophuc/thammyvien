@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
-import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, ChevronDown, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera, Wallet, Mic } from "lucide-react";
+import { ArrowLeft, CalendarDays, Loader2, MapPin, Check, Clock3, ClipboardList, CalendarClock, X, Phone, Pencil, Stethoscope, UserRound, MessageCircle, Camera, Wallet, Mic } from "lucide-react";
 import { completeSession, fileToBase64, type Patient, type Session } from "../../lib/technician";
 import { getArrivalAvailability, getCalendarBranches, getCalendarResources, type ArrivalSlot, type CalendarBranch, type CalendarResource } from "../../lib/calendar";
 import { bookNextTreatmentSession, fetchCareTreatment, fetchSkinLevelValues, logCareInteraction, saveCskhNote, setCareTag, type CareTreatment, type CareTagValue } from "../../lib/customerCare";
@@ -8,7 +8,8 @@ import CareStatusEditor from "../../components/CareStatusEditor";
 import CustomerProfileCard from "../../components/CustomerProfileCard";
 import SessionEditSheet from "../../components/SessionEditSheet";
 import { ProtocolView } from "../../components/ProtocolView";
-import { TierChip, LifecycleChip } from "../../components/PatientTags";
+import DatePickerSheet, { DatePickerButton } from "../../components/DatePickerSheet";
+import CustomSelect from "../../components/CustomSelect";
 
 // trạng thái buổi (đọc-only cho CSKH)
 const SESSION_STATUS: Record<string, { label: string; cls: string }> = {
@@ -49,6 +50,8 @@ function localTodayIso(): string {
 }
 
 const WEEKDAYS_SHORT_VI = ["CN", "T.Hai", "T.Ba", "T.Tư", "T.Năm", "T.Sáu", "T.Bảy"];
+type CareBookTab = "overview" | "protocol" | "note" | "sessions" | "booking";
+
 function buildBookingDays(): { label: string; iso: string; date: string }[] {
   const out: { label: string; iso: string; date: string }[] = [];
   const base = new Date();
@@ -98,10 +101,15 @@ export default function CustomerCareBook({
   const [care, setCare] = useState<CareTreatment | null>(null);
   const [note, setNote] = useState("");        // note CSKH theo liệu trình
   const [noteBusy, setNoteBusy] = useState(false);
-  const [protocolOpen, setProtocolOpen] = useState(false);
-  const [careOpen, setCareOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [openSessions, setOpenSessions] = useState<Set<string>>(() => new Set());
+  const [activeTab, setActiveTab] = useState<CareBookTab>("overview");
+  const tabRefs = useRef<Record<CareBookTab, HTMLButtonElement | null>>({
+    overview: null,
+    protocol: null,
+    note: null,
+    sessions: null,
+    booking: null,
+  });
   // Gom buổi theo liệu trình — khách mua gói mới thì số buổi đếm lại từ 1, để chung
   // một danh sách sẽ đọc thành "Buổi 9, 10…" của gói 8 buổi. Server đã trả theo thứ tự
   // gói cũ trước nên chỉ cần gom tuần tự, không sắp xếp lại.
@@ -118,6 +126,7 @@ export default function CustomerCareBook({
   const [skinValues, setSkinValues] = useState<CareTagValue[]>([]);
   const [skinBusy, setSkinBusy] = useState<string | null>(null); // appointmentId đang lưu
   const [editAppt, setEditAppt] = useState<string | null>(null); // CV-14: buổi đang mở sheet cập nhật
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [completing, setCompleting] = useState(false);
   // CV-23: tích "đã nhắn/gọi hôm nay" ngay tại màn khách
   const [tickedToday, setTickedToday] = useState(!!patient.interactedToday);
@@ -164,9 +173,6 @@ export default function CustomerCareBook({
       setTickBusy(false);
     }
   }
-  const toggleSession = (id: string) =>
-    setOpenSessions((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
   useEffect(() => {
     let cancelled = false;
     fetchCareTreatment(patient.id).then((c) => {
@@ -318,6 +324,17 @@ export default function CustomerCareBook({
     setShowDiscard(true);
   }
 
+  function selectTab(tab: CareBookTab) {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      tabRefs.current[tab]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    });
+  }
+
   return (
     <div className="min-h-full bg-[#eef0f5]">
       <header className="sticky top-0 z-10 flex items-center gap-3 bg-white px-3 py-3 shadow-sm">
@@ -325,9 +342,6 @@ export default function CustomerCareBook({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="truncate text-[16px] font-bold text-slate-800">{patient.name}</div>
-            {patient.tierSlug === "vip" && <TierChip p={patient} />}
-            {/* subtle không tự set cỡ chữ -> để trần sẽ ăn 16px bold của tên khách. */}
-            <span className="text-[11px]"><LifecycleChip p={patient} subtle /></span>
           </div>
           <div className="text-[12px] text-slate-400">
             {patient.service || "Chưa gán liệu trình"} · Dự kiến đặt buổi {nextSessionGuess}/{patient.sessionTotal || "?"}
@@ -344,188 +358,211 @@ export default function CustomerCareBook({
         )}
       </header>
 
-      <div className="space-y-3 p-4 pb-28">
-        {/* CV-23: CV tự xác nhận đã nhắn/gọi — dữ liệu để đo nhịp chăm (không đọc được Zalo, NT3) */}
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-bold text-slate-700">Nhịp chăm sóc</div>
-            <div className={`mt-0.5 text-[12.5px] font-semibold ${
-              tickDays < 0 ? "text-slate-400" : tickDays === 0 ? "text-emerald-600" : "text-slate-500"
-            }`}>
-              {tickDays < 0 ? "Chưa chăm lần nào" : tickDays === 0 ? "Đã chăm hôm nay" : `${tickDays} ngày chưa chăm`}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={toggleInteraction}
-            disabled={tickBusy}
-            aria-pressed={tickedToday}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold transition active:scale-95 disabled:opacity-60 ${
-              tickedToday ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            {tickBusy ? <Loader2 size={14} className="animate-spin" /> : tickedToday ? <Check size={14} /> : <MessageCircle size={14} />}
-            {tickedToday ? "Đã nhắn/gọi" : "Tích đã nhắn/gọi"}
-          </button>
+      <div className="sticky top-[64px] z-10 border-t border-slate-100 bg-white px-2 py-2 shadow-sm">
+        <div className="no-scrollbar flex gap-1 overflow-x-auto pb-0.5">
+          {[
+            { id: "overview", label: "Tổng quan", icon: MessageCircle },
+            { id: "protocol", label: "Phác đồ", icon: ClipboardList },
+            { id: "note", label: "Note", icon: Pencil },
+            { id: "sessions", label: "Hồ sơ", icon: CalendarClock },
+            { id: "booking", label: "Đặt lịch", icon: CalendarDays },
+          ].map((t) => {
+            const Icon = t.icon;
+            const on = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                ref={(el) => { tabRefs.current[t.id as CareBookTab] = el; }}
+                type="button"
+                onClick={() => selectTab(t.id as CareBookTab)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-bold transition ${
+                  on ? "bg-brand-600 text-white shadow-sm" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                <Icon size={14} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        {/* Ảnh minh chứng của lượt hôm nay — gửi ảnh khi chưa tích sẽ tự tạo lượt */}
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[12.5px] font-bold text-slate-600">Ảnh minh chứng</span>
-            <span className="text-[12px] text-slate-400">{proofs.length ? `· ${proofs.length} ảnh` : "· chưa có"}</span>
-            <button
-              type="button"
-              onClick={() => proofRef.current?.click()}
-              disabled={tickBusy}
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-bold text-slate-600 transition hover:bg-slate-200 active:scale-95 disabled:opacity-60"
-            >
-              <Camera size={14} />
-              Thêm ảnh
-            </button>
-          </div>
-          {proofs.length > 0 && (
-            <div className="mt-2 flex gap-2 overflow-x-auto">
-              {proofs.map((src, i) => (
-                <button key={i} type="button" onClick={() => setLightbox(src)} className="shrink-0">
-                  <img src={src} alt="" className="h-16 w-16 rounded-lg object-cover" />
+      <div className={`space-y-3 p-4 ${activeTab === "booking" ? "pb-28" : "pb-6"}`}>
+        {activeTab === "overview" && (
+          <>
+            {/* CV-23: CV tự xác nhận đã nhắn/gọi — dữ liệu để đo nhịp chăm (không đọc được Zalo, NT3) */}
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-bold text-slate-700">Nhịp chăm sóc</div>
+                  <div className={`mt-0.5 text-[12.5px] font-semibold ${
+                    tickDays < 0 ? "text-slate-400" : tickDays === 0 ? "text-emerald-600" : "text-slate-500"
+                  }`}>
+                    {tickDays < 0 ? "Chưa chăm lần nào" : tickDays === 0 ? "Đã chăm hôm nay" : `${tickDays} ngày chưa chăm`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleInteraction}
+                  disabled={tickBusy}
+                  aria-pressed={tickedToday}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-bold transition active:scale-95 disabled:opacity-60 ${
+                    tickedToday ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {tickBusy ? <Loader2 size={14} className="animate-spin" /> : tickedToday ? <Check size={14} /> : <MessageCircle size={14} />}
+                  {tickedToday ? "Đã nhắn/gọi" : "Tích đã nhắn/gọi"}
                 </button>
-              ))}
-            </div>
-          )}
-          <input ref={proofRef} type="file" accept="image/*" multiple className="hidden" onChange={addProofs} />
-        </div>
-        </div>
-        {/* CV-13: sửa trạng thái (care_status / mức độ da / hài lòng) */}
-        <CareStatusEditor customerId={patient.id} />
-        {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
-        <CustomerProfileCard customerId={patient.id} />
-
-        {/* Gói & công nợ Trợ lý chốt — chỉ xem, để CSKH biết khách còn nợ bao nhiêu khi gọi. */}
-        {care && (care.packagePrice || care.debtAmount || care.paidAmount) && (
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="mb-2.5 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-              <Wallet size={17} className="text-brand-600" /> Gói &amp; công nợ
-            </div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-              <Info label="Giá gói" value={fmtMoney(care.packagePrice)} />
-              <Info label="Đã thanh toán" value={fmtMoney(care.paidAmount)} />
-              <Info
-                label="Còn nợ"
-                value={fmtMoney(care.debtAmount)}
-                tone={care.debtAmount ? "text-rose-600" : "text-emerald-600"}
-              />
-              <Info label="Hẹn trả tiếp" value={ddmmyyyy(care.nextPaymentDate)} />
-              {care.purchaseDate && <Info label="Ngày mua" value={ddmmyyyy(care.purchaseDate)} />}
-            </div>
-            {care.dealNote && (
-              <div className="mt-3 rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Lý do chưa chốt</div>
-                <div className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-slate-600">{care.dealNote}</div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Ghi âm buổi tư vấn Trợ lý lưu — nghe lại trước khi gọi khách. */}
-        {care && care.recordings.length > 0 && (
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-              <Mic size={17} className="text-brand-600" /> Ghi âm tư vấn
-              <span className="text-[12px] font-medium text-slate-400">· {care.recordings.length}</span>
+              {/* Ảnh minh chứng của lượt hôm nay — gửi ảnh khi chưa tích sẽ tự tạo lượt */}
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12.5px] font-bold text-slate-600">Ảnh minh chứng</span>
+                  <span className="text-[12px] text-slate-400">{proofs.length ? `· ${proofs.length} ảnh` : "· chưa có"}</span>
+                  <button
+                    type="button"
+                    onClick={() => proofRef.current?.click()}
+                    disabled={tickBusy}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-bold text-slate-600 transition hover:bg-slate-200 active:scale-95 disabled:opacity-60"
+                  >
+                    <Camera size={14} />
+                    Thêm ảnh
+                  </button>
+                </div>
+                {proofs.length > 0 && (
+                  <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
+                    {proofs.map((src, i) => (
+                      <button key={i} type="button" onClick={() => setLightbox(src)} className="shrink-0">
+                        <img src={src} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input ref={proofRef} type="file" accept="image/*" multiple className="hidden" onChange={addProofs} />
+              </div>
             </div>
-            {care.recordings.map((src, i) => (
-              <audio key={i} src={src} controls preload="none" className="mt-2 w-full" />
-            ))}
-          </div>
-        )}
 
-        {/* Phác đồ điều trị — CSKH xem cùng cấu trúc form Trợ lý nhập. */}
-        {care && (
-          <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-            <button
-              type="button"
-              onClick={() => setProtocolOpen((o) => !o)}
-              className="flex w-full items-center gap-2 p-4 text-left"
-            >
-              <ClipboardList size={17} className="text-brand-600" />
-              <span className="text-[14px] font-bold text-slate-800">Phác đồ điều trị</span>
-              <ChevronDown size={18} className={`ml-auto shrink-0 text-slate-400 transition-transform ${protocolOpen ? "rotate-180" : ""}`} />
-            </button>
-            {protocolOpen && (
-              <div className="border-t border-slate-100 p-4">
-                {care.protocol ? (
-                  <ProtocolView text={care.protocol} />
-                ) : (
-                  <div className="text-[12.5px] text-slate-400">Chưa có phác đồ điều trị.</div>
+            {/* CV-13: sửa trạng thái (care_status / mức độ da / hài lòng) */}
+            <CareStatusEditor customerId={patient.id} />
+            {/* Hồ sơ khách Telesale nhập — CSKH kế thừa, dùng chung component với ĐTV. */}
+            <CustomerProfileCard customerId={patient.id} />
+
+            {/* Gói & công nợ Trợ lý chốt — chỉ xem, để CSKH biết khách còn nợ bao nhiêu khi gọi. */}
+            {care && (care.packagePrice || care.debtAmount || care.paidAmount) && (
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-2.5 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                  <Wallet size={17} className="text-brand-600" /> Gói &amp; công nợ
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+                  <Info label="Giá gói" value={fmtMoney(care.packagePrice)} />
+                  <Info label="Đã thanh toán" value={fmtMoney(care.paidAmount)} />
+                  <Info
+                    label="Còn nợ"
+                    value={fmtMoney(care.debtAmount)}
+                    tone={care.debtAmount ? "text-rose-600" : "text-emerald-600"}
+                  />
+                  <Info label="Hẹn trả tiếp" value={ddmmyyyy(care.nextPaymentDate)} />
+                  {care.purchaseDate && <Info label="Ngày mua" value={ddmmyyyy(care.purchaseDate)} />}
+                </div>
+                {care.dealNote && (
+                  <div className="mt-3 rounded-xl bg-slate-50 p-2.5">
+                    <div className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Lý do chưa chốt</div>
+                    <div className="mt-0.5 whitespace-pre-line text-[13px] leading-relaxed text-slate-600">{care.dealNote}</div>
+                  </div>
                 )}
               </div>
             )}
+
+            {/* Ghi âm buổi tư vấn Trợ lý lưu — nghe lại trước khi gọi khách. */}
+            {care && care.recordings.length > 0 && (
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                  <Mic size={17} className="text-brand-600" /> Ghi âm tư vấn
+                  <span className="text-[12px] font-medium text-slate-400">· {care.recordings.length}</span>
+                </div>
+                {care.recordings.map((src, i) => (
+                  <audio key={i} src={src} controls preload="none" className="mt-2 w-full" />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === "protocol" && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+              <ClipboardList size={17} className="text-brand-600" />
+              Phác đồ điều trị
+            </div>
+            {care?.protocol ? (
+              <ProtocolView text={care.protocol} />
+            ) : (
+              <div className="text-[12.5px] text-slate-400">Chưa có phác đồ điều trị.</div>
+            )}
           </div>
         )}
 
-        {/* Note CSKH — theo LIỆU TRÌNH đang chạy, dùng chung ô với màn CEP. */}
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-            <Pencil size={16} className="text-brand-600" /> Note khách
-            {care?.cskhNoteAt && (
-              <span className="ml-auto text-[11.5px] font-normal text-slate-400">
-                {care.cskhNoteBy ? `${care.cskhNoteBy} · ` : ""}{ddmm(care.cskhNoteAt)}
-              </span>
+        {activeTab === "note" && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+              <Pencil size={16} className="text-brand-600" /> Note khách
+              {care?.cskhNoteAt && (
+                <span className="ml-auto text-[11.5px] font-normal text-slate-400">
+                  {care.cskhNoteBy ? `${care.cskhNoteBy} · ` : ""}{ddmm(care.cskhNoteAt)}
+                </span>
+              )}
+            </div>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={8}
+              placeholder="Ghi chú riêng của CSKH cho liệu trình này…"
+              className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-[13.5px] leading-snug text-slate-700 outline-none focus:border-brand-400"
+            />
+            {noteDirty && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={saveNote}
+                  disabled={noteBusy}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3.5 py-1.5 text-[12.5px] font-bold text-white transition active:scale-95 disabled:opacity-60"
+                >
+                  {noteBusy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Lưu note
+                </button>
+              </div>
             )}
           </div>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            placeholder="Ghi chú riêng của CSKH cho liệu trình này…"
-            className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-[13.5px] leading-snug text-slate-700 outline-none focus:border-brand-400"
-          />
-          {noteDirty && (
-            <button
-              type="button"
-              onClick={saveNote}
-              disabled={noteBusy}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3.5 py-1.5 text-[12.5px] font-bold text-white transition active:scale-95 disabled:opacity-60"
-            >
-              {noteBusy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Lưu note
-            </button>
-          )}
-        </div>
+        )}
 
-        {/* Hồ sơ điều trị — CSKH xem lịch sử buổi và sửa buổi (CV-14) */}
-        {care && care.sessions.length > 0 && (
-          <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-            <button onClick={() => setCareOpen((o) => !o)} className="flex w-full items-center gap-2 p-4 text-left">
+        {activeTab === "sessions" && (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-[14px] font-bold text-slate-800">
               <ClipboardList size={17} className="text-brand-600" />
-              <span className="text-[14px] font-bold text-slate-800">Hồ sơ điều trị</span>
-              <span className="text-[12px] text-slate-400">· {care.sessions.length} buổi</span>
-              <ChevronDown size={18} className={`ml-auto shrink-0 text-slate-400 transition-transform ${careOpen ? "rotate-180" : ""}`} />
-            </button>
-            {careOpen && (
-              <div className="space-y-3 border-t border-slate-100 p-4">
-                {sessionGroups.map((grp) => (
+              Hồ sơ điều trị
+              <span className="text-[12px] font-medium text-slate-400">· {care?.sessions.length ?? 0} buổi</span>
+            </div>
+            {care && care.sessions.length > 0 ? (
+              <div className="space-y-3">
+                {sessionGroups.map((grp, groupIdx) => (
                   <div key={grp.key}>
-                    <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-500">
-                      <CalendarClock size={14} />
-                      {/* Chỉ có 1 gói thì giữ nhãn cũ; nhiều gói mới nêu tên để phân biệt. */}
-                      {sessionGroups.length > 1 ? grp.name : "Các buổi"}
+                    <div className="mb-2 flex items-center gap-2 text-[12px] font-bold text-slate-500">
+                      <span className="inline-flex items-center gap-1.5">
+                        <CalendarClock size={14} className="text-brand-600" />
+                        Bộ liệu trình {groupIdx + 1}
+                      </span>
                       {sessionGroups.length > 1 && (
-                        <span className="font-semibold text-slate-400">· {grp.sessions.length} buổi</span>
+                        <span className="min-w-0 truncate text-[12px] font-semibold text-slate-400">
+                          {grp.name} · {grp.sessions.length} buổi
+                        </span>
                       )}
                     </div>
                     <div className="space-y-2">
                       {grp.sessions.map((s, idx) => {
                         const st = SESSION_STATUS[s.status] ?? { label: s.status || "—", cls: "bg-slate-100 text-slate-500" };
-                        const open = openSessions.has(s.appointmentId);
                         return (
-                          <div key={s.appointmentId} className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-                            <button
-                              type="button"
-                              onClick={() => toggleSession(s.appointmentId)}
-                              className="flex w-full items-center gap-2 p-3 text-left"
-                            >
+                          <div key={s.appointmentId} className="rounded-xl border border-slate-100 bg-white p-3">
+                            <div className="flex items-start gap-2">
                               <span className="shrink-0 whitespace-nowrap text-[13.5px] font-semibold text-slate-800">Buổi {s.sessionNumber ?? idx + 1}</span>
                               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                                 <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-bold ${st.cls}`}>{st.label}</span>
@@ -537,13 +574,11 @@ export default function CustomerCareBook({
                                     {s.skinName}
                                   </span>
                                 )}
-                                {/* CV-14: ĐTV đã làm buổi này (chỉ xem) */}
                                 {s.therapistName && (
                                   <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">
                                     <UserRound size={10} /> {s.therapistName}
                                   </span>
                                 )}
-                                {/* CV-15: BS đã tick khi book buổi này */}
                                 {s.doctorName && (
                                   <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">
                                     <Stethoscope size={10} /> {s.doctorName}
@@ -551,58 +586,53 @@ export default function CustomerCareBook({
                                 )}
                               </div>
                               <span className="shrink-0 whitespace-nowrap text-[11.5px] text-slate-400">{fmtDateFull(s.dateIso)}</span>
-                              <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
-                            </button>
-                            {open && (
-                              <div className="border-t border-slate-100 p-3">
-                                {/* CV-14: CSKH sửa được ngày/ĐTV/bác sĩ/nhật ký/ảnh của buổi */}
-                                <div className="mb-2 flex justify-end">
+                            </div>
+
+                            <div className="mt-2 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setEditAppt(s.appointmentId)}
+                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
+                              >
+                                <Pencil size={13} /> Cập nhật buổi
+                              </button>
+                            </div>
+                            {s.note ? (
+                              <div className="mt-1 whitespace-pre-line text-[12.5px] leading-relaxed text-slate-600">{s.note}</div>
+                            ) : (
+                              <div className="mt-1 text-[12.5px] text-slate-400">Chưa có nhật ký buổi này.</div>
+                            )}
+                            {s.photos.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {s.photos.map((url, i) => (
                                   <button
+                                    key={i}
                                     type="button"
-                                    onClick={() => setEditAppt(s.appointmentId)}
-                                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-brand-600 transition hover:bg-brand-50"
+                                    onClick={() => setLightbox(url)}
+                                    aria-label={`Xem ảnh buổi ${s.sessionNumber ?? idx + 1}`}
+                                    className="h-16 w-16 cursor-zoom-in overflow-hidden rounded-lg border border-slate-200"
                                   >
-                                    <Pencil size={13} /> Cập nhật buổi
+                                    <img src={url} alt="" className="h-full w-full object-cover" />
                                   </button>
+                                ))}
+                              </div>
+                            )}
+                            {skinValues.length > 0 && (
+                              <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+                                <div className="min-w-0">
+                                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Tình trạng da</div>
+                                  {s.skinName ? (
+                                    <span
+                                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                                      style={chipStyle(s.skinColor)}
+                                    >
+                                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.skinColor || "#94a3b8" }} />
+                                      {s.skinName}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[12.5px] text-slate-400">Chưa ghi nhận</span>
+                                  )}
                                 </div>
-                                {s.note ? (
-                                  <div className="whitespace-pre-line text-[12.5px] leading-relaxed text-slate-600">{s.note}</div>
-                                ) : (
-                                  <div className="text-[12.5px] text-slate-400">Chưa có nhật ký buổi này.</div>
-                                )}
-                                {s.photos.length > 0 && (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {s.photos.map((url, i) => (
-                                      <button
-                                        key={i}
-                                        type="button"
-                                        onClick={() => setLightbox(url)}
-                                        aria-label={`Xem ảnh buổi ${s.sessionNumber ?? idx + 1}`}
-                                        className="h-16 w-16 cursor-zoom-in overflow-hidden rounded-lg border border-slate-200"
-                                      >
-                                        <img src={url} alt="" className="h-full w-full object-cover" />
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                {skinValues.length > 0 && (
-                                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
-                                    <div className="min-w-0">
-                                      <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Tình trạng da</div>
-                                      {s.skinName ? (
-                                        <span
-                                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold"
-                                          style={chipStyle(s.skinColor)}
-                                        >
-                                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.skinColor || "#94a3b8" }} />
-                                          {s.skinName}
-                                        </span>
-                                      ) : (
-                                        <span className="text-[12.5px] text-slate-400">Chưa ghi nhận</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>
@@ -612,130 +642,131 @@ export default function CustomerCareBook({
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="text-[12.5px] text-slate-400">Chưa có hồ sơ điều trị.</div>
             )}
           </div>
         )}
 
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-            <CalendarDays size={17} className="text-brand-600" /> Chọn ngày
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {days.map((d) => (
-              <button
-                key={d.iso}
-                onClick={() => setSelectedIso(d.iso)}
-                className={`shrink-0 rounded-xl border px-3 py-2 text-left ${selectedIso === d.iso ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white"}`}
-              >
-                <div className={`text-[12px] font-bold ${selectedIso === d.iso ? "text-brand-600" : "text-slate-500"}`}>{d.label}</div>
-                <div className="text-[13px] font-semibold text-slate-800">{d.date}</div>
-              </button>
-            ))}
-          </div>
-          {/* Chọn ngày tự do (giống telesale) */}
-          <div className="mt-2.5 flex items-center gap-2">
-            <span className="shrink-0 text-[12.5px] text-slate-500">Hoặc ngày khác:</span>
-            <input
-              type="date"
-              value={selectedIso}
-              min={localTodayIso()}
-              onChange={(e) => e.target.value && setSelectedIso(e.target.value)}
-              className="flex-1 rounded-xl border-2 border-slate-100 px-3 py-1.5 text-[14px] text-slate-700 outline-none transition-colors focus:border-brand-300"
-            />
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-            <MapPin size={17} className="text-brand-600" /> Chọn chi nhánh
-          </div>
-          <select
-            value={branch?.id ?? ""}
-            onChange={(e) => setBranch(branches.find((b) => b.id === e.target.value) ?? null)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-slate-700 outline-none focus:border-brand-400"
-          >
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* CV-15: tick chọn bác sĩ khám — không bắt buộc, không giữ chỗ lịch BS */}
-        {doctors.length > 0 && (
-          <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-              <Stethoscope size={17} className="text-brand-600" /> Bác sĩ khám
-              <span className="text-[12px] font-medium text-slate-400">· không bắt buộc</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setDoctorId(null)}
-                className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 ${
-                  doctorId === null ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                Chưa chọn
-              </button>
-              {doctors.map((d) => {
-                const on = doctorId === d.id;
-                const c = d.colorHex || "#0ea5e9";
-                return (
+        {activeTab === "booking" && (
+          <>
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                <CalendarDays size={17} className="text-brand-600" /> Chọn ngày
+              </div>
+              <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+                {days.map((d) => (
                   <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => setDoctorId(on ? null : d.id)}
-                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95"
-                    style={chipStyle(c, on)}
+                    key={d.iso}
+                    onClick={() => setSelectedIso(d.iso)}
+                    className={`shrink-0 rounded-xl border px-3 py-2 text-left ${selectedIso === d.iso ? "border-brand-500 bg-brand-50" : "border-slate-200 bg-white"}`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
-                    {d.name}
+                    <div className={`text-[12px] font-bold ${selectedIso === d.iso ? "text-brand-600" : "text-slate-500"}`}>{d.label}</div>
+                    <div className="text-[13px] font-semibold text-slate-800">{d.date}</div>
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              {/* Chọn ngày tự do (giống telesale) */}
+              <div className="mt-2.5 flex items-center gap-2">
+                <span className="shrink-0 text-[12.5px] text-slate-500">Hoặc ngày khác:</span>
+                <DatePickerButton
+                  value={selectedIso}
+                  onClick={() => setDatePickerOpen(true)}
+                  className="flex-1"
+                />
+              </div>
             </div>
-          </div>
-        )}
 
-        <div className="rounded-2xl bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
-            <Clock3 size={17} className="text-brand-600" /> Chọn giờ
-          </div>
-          {loadingSlots ? (
-            <div className="flex justify-center py-8 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
-          ) : slots.length === 0 ? (
-            <div className="py-8 text-center text-[13.5px] text-slate-400">Không có khung giờ phù hợp.</div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {slots
-                .filter((s) => !s.isPast)
-                .map((s) => {
-                  const disabled = s.available <= 0;
-                  const on = slot === s.startAt;
-                  return (
-                    <button
-                      key={s.startAt}
-                      disabled={disabled}
-                      onClick={() => setSlot(s.startAt)}
-                      className={`rounded-xl border px-2.5 py-2 text-[13px] font-bold ${
-                        disabled ? "border-slate-200 bg-slate-50 text-slate-300" :
-                        on ? "border-brand-500 bg-brand-600 text-white" :
-                        "border-slate-200 bg-white text-slate-700 hover:border-brand-400"
-                      }`}
-                    >
-                      {formatHm(s.startAt)}
-                      <div className={`mt-0.5 text-[10.5px] font-semibold ${on ? "text-white/80" : "text-slate-400"}`}>
-                        {disabled ? "Hết chỗ" : `${s.available}/${s.capacity}`}
-                      </div>
-                    </button>
-                  );
-                })}
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                <MapPin size={17} className="text-brand-600" /> Chọn chi nhánh
+              </div>
+              <CustomSelect
+                value={branch?.id ?? ""}
+                onChange={(value) => setBranch(branches.find((b) => b.id === value) ?? null)}
+                placeholder="Chọn chi nhánh"
+                disabled={branches.length === 0}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              />
             </div>
-          )}
-        </div>
+
+            {/* CV-15: tick chọn bác sĩ khám — không bắt buộc, không giữ chỗ lịch BS */}
+            {doctors.length > 0 && (
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                  <Stethoscope size={17} className="text-brand-600" /> Bác sĩ khám
+                  <span className="text-[12px] font-medium text-slate-400">· không bắt buộc</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setDoctorId(null)}
+                    className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 ${
+                      doctorId === null ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    Chưa chọn
+                  </button>
+                  {doctors.map((d) => {
+                    const on = doctorId === d.id;
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => setDoctorId(on ? null : d.id)}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition active:scale-95 ${
+                          on ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {d.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center gap-2 text-[14px] font-bold text-slate-800">
+                <Clock3 size={17} className="text-brand-600" /> Chọn giờ
+              </div>
+              {loadingSlots ? (
+                <div className="flex justify-center py-8 text-slate-400"><Loader2 size={24} className="animate-spin" /></div>
+              ) : slots.length === 0 ? (
+                <div className="py-8 text-center text-[13.5px] text-slate-400">Không có khung giờ phù hợp.</div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {slots
+                    .filter((s) => !s.isPast)
+                    .map((s) => {
+                      const disabled = s.available <= 0;
+                      const on = slot === s.startAt;
+                      return (
+                        <button
+                          key={s.startAt}
+                          disabled={disabled}
+                          onClick={() => setSlot(s.startAt)}
+                          className={`rounded-xl border px-2.5 py-2 text-[13px] font-bold ${
+                            disabled ? "border-slate-200 bg-slate-50 text-slate-300" :
+                            on ? "border-brand-500 bg-brand-600 text-white" :
+                            "border-slate-200 bg-white text-slate-700 hover:border-brand-400"
+                          }`}
+                        >
+                          {formatHm(s.startAt)}
+                          <div className={`mt-0.5 text-[10.5px] font-semibold ${on ? "text-white/80" : "text-slate-400"}`}>
+                            {disabled ? "Hết chỗ" : `${s.available}/${s.capacity}`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-white px-3 pb-3 pt-2">
+      {activeTab === "booking" && <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-white px-3 pb-3 pt-2">
         <button
           onClick={save}
           disabled={!canSave}
@@ -744,7 +775,7 @@ export default function CustomerCareBook({
           {saving ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}
           {saving ? "Đang đặt lịch…" : "Đặt lịch buổi tiếp theo"}
         </button>
-      </div>
+      </div>}
 
       {showDiscard && (
         <div
@@ -775,6 +806,16 @@ export default function CustomerCareBook({
             </div>
           </div>
         </div>
+      )}
+
+      {datePickerOpen && (
+        <DatePickerSheet
+          value={selectedIso}
+          min={localTodayIso()}
+          title="Chọn ngày hẹn"
+          onChange={setSelectedIso}
+          onClose={() => setDatePickerOpen(false)}
+        />
       )}
 
       {/* CV-14: sheet cập nhật buổi — lưu xong nạp lại hồ sơ điều trị tại chỗ */}

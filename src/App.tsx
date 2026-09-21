@@ -258,7 +258,7 @@ function AppLayout({ navItems }: { navItems?: NavItem[] }) {
   return (
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
-        <main className="flex-1 overflow-y-auto pb-[88px]">
+        <main className="no-scrollbar flex-1 overflow-y-auto pb-[88px]">
           <Outlet />
         </main>
         <BottomNav items={navItems} />
@@ -318,7 +318,7 @@ function LeadDetailRoute({ showToast }: { showToast: (m: string) => void }) {
   return (
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
-        <div className="flex-1 overflow-y-auto">
+        <div className="no-scrollbar flex-1 overflow-y-auto">
           <LeadDetail
             lead={lead}
             onBack={() => navigate(-1)}
@@ -382,7 +382,7 @@ function TechnicianPatientRoute({ showToast }: { showToast: (m: string) => void 
   return (
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
-        <div className="flex-1 overflow-y-auto">
+        <div className="no-scrollbar flex-1 overflow-y-auto">
           <TechnicianPatientDetail
             patient={patient}
             onBack={() => navigate(-1)}
@@ -449,7 +449,7 @@ function CustomerCareBookRoute({ showToast }: { showToast: (m: string) => void }
   return (
     <div className="flex h-screen justify-center bg-slate-300/60">
       <div className="relative flex h-screen w-full max-w-md flex-col overflow-hidden bg-[#eef0f5] shadow-2xl">
-        <div className="flex-1 overflow-y-auto">
+        <div className="no-scrollbar flex-1 overflow-y-auto">
           <CustomerCareBook
             patient={patient}
             onBack={() => navigate(-1)}

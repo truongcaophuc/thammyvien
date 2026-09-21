@@ -213,7 +213,7 @@ export default function CareStatusEditor({
               <X size={18} />
             </button>
           </div>
-          <div className="max-h-[62vh] space-y-4 overflow-y-auto px-4 py-4">
+          <div className="no-scrollbar max-h-[62vh] space-y-4 overflow-y-auto px-4 py-4">
             {err && (
               <div className="rounded-xl bg-rose-50 px-3 py-2 text-[12.5px] font-semibold text-rose-600">{err}</div>
             )}
@@ -279,7 +279,7 @@ export default function CareStatusEditor({
               <div className="mt-1 text-[12.5px] text-slate-500">Ticket đã đẩy sang Leader xử lý.</div>
             </div>
           ) : (
-            <div className="max-h-[62vh] space-y-4 overflow-y-auto px-4 py-4">
+            <div className="no-scrollbar max-h-[62vh] space-y-4 overflow-y-auto px-4 py-4">
               <div>
                 <label className="mb-1 block text-[12px] font-bold text-slate-600">
                   Vấn đề complain <span className="text-red-500">*</span>

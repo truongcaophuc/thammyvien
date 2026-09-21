@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { CalendarDays, Loader2, MapPin, MonitorCog, Search, Tag } from "lucide-react";
 import { fetchTechnicianAppointments, type AppointmentResource, type TechnicianAppointment } from "../../lib/technician";
 import { chipStyle } from "../../lib/chipColor";
+import DatePickerSheet, { DatePickerButton } from "../../components/DatePickerSheet";
 
 // Nhãn + màu trạng thái buổi (khuôn lấy từ CustomerCareBook, thêm cancelled/no_show
 // vì tab lịch hẹn hiển thị cả buổi huỷ/vắng).
@@ -92,6 +93,7 @@ let rememberedDate = "";
 export default function TechnicianAppointments() {
   const navigate = useNavigate();
   const [date, setDate] = useState(() => rememberedDate || localTodayIso());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   // Dải ngày bắt đầu từ hôm trước ngày đang chọn -> ngày chọn luôn nằm trong dải.
   const [anchor, setAnchor] = useState(() => shiftIso(rememberedDate || localTodayIso(), -1));
   const [items, setItems] = useState<TechnicianAppointment[] | null>(null);
@@ -239,24 +241,14 @@ export default function TechnicianAppointments() {
       <header className="sticky top-0 z-10 bg-white px-5 pb-4 pt-4 shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold text-slate-800">Lịch hẹn</h1>
-          <label className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 py-1.5 text-[12.5px] font-semibold text-slate-500">
-            <CalendarDays size={15} className="text-slate-400" />
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (!v) return;
-                pickDate(v);
-                setAnchor(shiftIso(v, -1));
-              }}
-              className="w-[108px] bg-transparent outline-none"
-              aria-label="Chọn ngày"
-            />
-          </label>
+          <DatePickerButton
+            value={date}
+            onClick={() => setDatePickerOpen(true)}
+            className="max-w-[178px] border border-slate-200 py-1.5 text-[12.5px]"
+          />
         </div>
 
-        <div className="-mx-5 mt-4 flex snap-x scroll-px-5 gap-2.5 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="no-scrollbar -mx-5 mt-4 flex snap-x scroll-px-5 gap-2.5 overflow-x-auto px-5 pb-1">
           {days.map((d) => {
             const on = d.iso === date;
             return (
@@ -299,7 +291,7 @@ export default function TechnicianAppointments() {
           ))}
         </div>
 
-        <div className="-mx-5 mt-3.5 flex snap-x scroll-px-5 gap-2 overflow-x-auto px-5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="no-scrollbar -mx-5 mt-3.5 flex snap-x scroll-px-5 gap-2 overflow-x-auto px-5 pb-1">
           {FILTERS.map((f) => {
             const on = f.key === filter;
             return (
@@ -357,6 +349,18 @@ export default function TechnicianAppointments() {
           </div>
         )}
       </div>
+
+      {datePickerOpen && (
+        <DatePickerSheet
+          value={date}
+          title="Chọn ngày"
+          onChange={(value) => {
+            pickDate(value);
+            setAnchor(shiftIso(value, -1));
+          }}
+          onClose={() => setDatePickerOpen(false)}
+        />
+      )}
 
     </div>
   );

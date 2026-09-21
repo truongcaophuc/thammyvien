@@ -4,9 +4,9 @@ import { fetchLeadProfile, type LeadProfile } from "../lib/leads";
 
 // Hồ sơ khách do Telesale nhập (cơ bản + thuộc tính DynamicForm) — DÙNG CHUNG cho ĐTV & CSKH.
 // leadProfile nhận Customer.Id nên khách điều trị dùng thẳng patient.id, không cần query riêng.
-// Gập lại mặc định + chỉ tải khi mở lần đầu: 2 màn chi tiết đã rất dài, không nên nạp thêm.
+// Mở mặc định để CSKH thấy đủ thông tin ngay, vẫn cho phép thu gọn khi cần.
 export default function CustomerProfileCard({ customerId }: { customerId: string }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [profile, setProfile] = useState<LeadProfile | null>(null);
   const [loaded, setLoaded] = useState(false);
 

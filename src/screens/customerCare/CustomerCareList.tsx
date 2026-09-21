@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { chipStyle } from "../../lib/chipColor";
-import { Loader2, Search, SlidersHorizontal, X, AlertTriangle, MessageCircle } from "lucide-react";
+import { Loader2, Search, SlidersHorizontal, X, AlertTriangle } from "lucide-react";
 import { fetchCarePatients, fetchCareRhythmPhases, type CareRhythmPhase } from "../../lib/customerCare";
 import type { Patient } from "../../lib/technician";
-import { TierChip, LifecycleChip } from "../../components/PatientTags";
+import { TierChip } from "../../components/PatientTags";
 
 // CV-08: ngưỡng lấy từ giai đoạn (bảng CareRhythmPhase, quản trị trên web) -> server trả overdueDays.
 // overdueDays null = khách không tính nhịp (đã bỏ liệu trình / ngừng chăm).
@@ -188,7 +188,7 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
           </button>
         </div>
         {careChips.length > 0 && (
-          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5" style={{ scrollbarWidth: "none" }}>
+          <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5">
             {overdueCount > 0 && (
               <button
                 onClick={() => setOverdueOnly((v) => !v)}
@@ -257,7 +257,6 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
                 <div className="mt-0.5 truncate text-[12.5px] text-slate-500">{p.service}</div>
                 <div className="mt-1.5 flex items-center justify-between gap-2 text-[12px] text-slate-400">
                   <span className="flex min-w-0 items-center gap-2">
-                    <LifecycleChip p={p} subtle />
                     <span className="font-semibold text-slate-500">Buổi {p.sessionDone}/{p.sessionTotal}</span>
                   </span>
                   <span>Hẹn gần nhất: {fmtDate(p.lastCareAt)}</span>
@@ -292,7 +291,7 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
             {(() => {
               const rhythm = careRhythm(p);
               return (
-                <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3.5 py-2">
+                <div className="flex items-center gap-2 border-t border-slate-100 px-3.5 py-2">
                   <span className="flex min-w-0 items-center gap-2">
                     {p.carePhase && (
                       <span
@@ -303,18 +302,6 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
                       </span>
                     )}
                     <span className={`truncate text-[12px] font-semibold ${rhythm.cls}`}>{rhythm.text}</span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] font-bold ${
-                        p.interactedToday || p.messagedToday || p.calledToday
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
-                    >
-                      <MessageCircle size={13} />
-                      Đã liên hệ
-                    </span>
                   </span>
                 </div>
               );
@@ -339,7 +326,7 @@ export default function CustomerCareList({ onOpenPatient }: { onOpenPatient: (p:
               <X size={18} />
             </button>
           </div>
-          <div className="max-h-[60vh] overflow-y-auto px-4 py-4">
+          <div className="no-scrollbar max-h-[60vh] overflow-y-auto px-4 py-4">
             {phaseOpts.length > 0 && (
               <div className="mb-4">
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Giai đoạn chăm sóc</div>

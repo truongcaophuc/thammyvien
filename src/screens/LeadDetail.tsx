@@ -30,6 +30,8 @@ import { saveCallResult } from "../lib/callResult";
 import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, type LeadProfile, type SkinPhoto } from "../lib/leads";
 import { fetchKbPinned } from "../lib/kb";
 import Sheet from "../components/Sheet";
+import CustomSelect from "../components/CustomSelect";
+import DatePickerSheet, { DatePickerButton } from "../components/DatePickerSheet";
 import { getArrivalAvailability, getCalendarBranches, getLeadAppointment, rescheduleAppointment, cancelAppointment, type ArrivalSlot, type CalendarBranch, type LeadAppointment, type CancelLeadOutcome } from "../lib/calendar";
 
 // HH:mm từ ISO datetime
@@ -118,6 +120,7 @@ export default function LeadDetail({
 
   const [result, setResult] = useState<ResultKey | null>(null);
   const [selectedIso, setSelectedIso] = useState(bookingDays[1].iso); // YYYY-MM-DD — chọn tự do
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [slot, setSlot] = useState<string | null>(null); // ISO startAt của khung giờ đã chọn
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -669,17 +672,13 @@ export default function LeadDetail({
                 <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-slate-400">
                   Chọn cơ sở
                 </div>
-                <select
+                <CustomSelect
                   value={branch?.id ?? ""}
-                  onChange={(e) => setBranch(branches.find((b) => b.id === e.target.value) ?? null)}
+                  onChange={(value) => setBranch(branches.find((b) => b.id === value) ?? null)}
                   disabled={branches.length === 0}
-                  className="w-full cursor-pointer rounded-xl border-2 border-slate-100 bg-white px-3 py-2.5 text-[14px] font-semibold text-slate-700 focus:border-brand-500 focus:outline-none disabled:opacity-60"
-                >
-                  {branches.length === 0 && <option value="">Đang tải cơ sở…</option>}
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
+                  placeholder={branches.length === 0 ? "Đang tải cơ sở…" : "Chọn cơ sở"}
+                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                />
               </div>
 
               {/* Chọn ngày */}
@@ -721,12 +720,10 @@ export default function LeadDetail({
                 {/* Chọn ngày tự do */}
                 <div className="mt-2.5 flex items-center gap-2">
                   <span className="text-[12.5px] text-slate-500">Hoặc ngày khác:</span>
-                  <input
-                    type="date"
+                  <DatePickerButton
                     value={selectedIso}
-                    min={localTodayIso()}
-                    onChange={(e) => e.target.value && setSelectedIso(e.target.value)}
-                    className="flex-1 rounded-xl border-2 border-slate-100 px-3 py-1.5 text-[14px] text-slate-700 outline-none transition-colors focus:border-brand-300"
+                    onClick={() => setDatePickerOpen(true)}
+                    className="flex-1"
                   />
                 </div>
               </div>
@@ -955,6 +952,16 @@ export default function LeadDetail({
             </button>
           </div>
         </div>
+      )}
+
+      {datePickerOpen && (
+        <DatePickerSheet
+          value={selectedIso}
+          min={localTodayIso()}
+          title="Chọn ngày hẹn"
+          onChange={setSelectedIso}
+          onClose={() => setDatePickerOpen(false)}
+        />
       )}
 
       {/* Popup Nguyên tắc tư vấn — LUÔN mở khi bấm Gọi ngay; dial chỉ qua "Tiếp tục gọi".

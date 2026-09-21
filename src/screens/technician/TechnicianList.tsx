@@ -177,7 +177,7 @@ export default function TechnicianList({ onOpenPatient }: { onOpenPatient: (p: P
           />
         </div>
         {tierChips.length > 0 && (
-          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5" style={{ scrollbarWidth: "none" }}>
+          <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5">
             <button
               onClick={() => setTierFilter(null)}
               className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { chipStyle } from "../lib/chipColor";
-import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock, Check, Lock } from "lucide-react";
+import { X, Loader2, Camera, Trash2, UserRound, Stethoscope, CalendarClock, Check, Lock, ChevronLeft, ChevronRight } from "lucide-react";
 import { updateCareSession, UNASSIGN, type CareTagValue, type TreatmentPhoto } from "../lib/customerCare";
 import { fileToBase64, type Session } from "../lib/technician";
 import { getCalendarResources, type CalendarResource } from "../lib/calendar";
@@ -12,6 +12,226 @@ function toLocalInput(iso: string): string {
   if (!iso) return "";
   return iso.slice(0, 16);
 }
+
+const WEEKDAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const DEFAULT_TIME = "09:00";
+const TIME_SLOTS = Array.from({ length: 26 }, (_, i) => {
+  const minutes = 8 * 60 + i * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+});
+
+function parseWhen(value: string) {
+  const [date = "", rawTime = ""] = value.split("T");
+  return { date, time: rawTime.slice(0, 5) || DEFAULT_TIME };
+}
+
+function toYmd(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function parseYmd(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function monthDays(year: number, month: number) {
+  const first = new Date(year, month, 1);
+  const offset = (first.getDay() + 6) % 7;
+  const count = new Date(year, month + 1, 0).getDate();
+  return [
+    ...Array.from({ length: offset }, () => ""),
+    ...Array.from({ length: count }, (_, i) => toYmd(new Date(year, month, i + 1))),
+  ];
+}
+
+function formatWhenLabel(value: string) {
+  if (!value) return "Chọn ngày & giờ";
+  const { date, time } = parseWhen(value);
+  if (!date) return "Chọn ngày & giờ";
+  const d = parseYmd(date);
+  const day = d.getDay() === 0 ? "CN" : `Thứ ${d.getDay() + 1}`;
+  return `${day}, ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} · ${time}`;
+}
+
+function DateTimePickerSheet({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+}) {
+  const fallback = `${toYmd(new Date())}T${DEFAULT_TIME}`;
+  const initial = parseWhen(value || fallback);
+  const [draftDate, setDraftDate] = useState(initial.date);
+  const [draftTime, setDraftTime] = useState(initial.time);
+  const initialMonth = parseYmd(initial.date);
+  const [month, setMonth] = useState(() => ({ year: initialMonth.getFullYear(), index: initialMonth.getMonth() }));
+  const today = toYmd(new Date());
+  const quickDates = [0, 1, 2, 3, 4].map((days) => {
+    const d = addDays(new Date(), days);
+    return {
+      value: toYmd(d),
+      label: days === 0 ? "Hôm nay" : days === 1 ? "Ngày mai" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+    };
+  });
+  const slots = useMemo(() => {
+    if (TIME_SLOTS.includes(draftTime)) return TIME_SLOTS;
+    return [...TIME_SLOTS, draftTime].sort();
+  }, [draftTime]);
+
+  function moveMonth(delta: number) {
+    setMonth((prev) => {
+      const d = new Date(prev.year, prev.index + delta, 1);
+      return { year: d.getFullYear(), index: d.getMonth() };
+    });
+  }
+
+  function pickDate(date: string) {
+    setDraftDate(date);
+    const d = parseYmd(date);
+    setMonth({ year: d.getFullYear(), index: d.getMonth() });
+  }
+
+  function done() {
+    onChange(`${draftDate}T${draftTime}`);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80]">
+      <div className="absolute inset-0 bg-slate-950/35" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[92vh] max-w-md flex-col rounded-t-2xl bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="text-[15px] font-bold text-slate-800">Chọn ngày giờ</div>
+          <button onClick={onClose} aria-label="Đóng" className="rounded-full p-1 text-slate-400 hover:bg-slate-100">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+            {quickDates.map((d) => {
+              const on = draftDate === d.value;
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => pickDate(d.value)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-bold transition active:scale-95 ${on ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="rounded-2xl border border-slate-100 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => moveMonth(-1)}
+                aria-label="Tháng trước"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="text-[14px] font-extrabold text-slate-800">
+                Tháng {month.index + 1}/{month.year}
+              </div>
+              <button
+                type="button"
+                onClick={() => moveMonth(1)}
+                aria-label="Tháng sau"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-slate-400">
+              {WEEKDAYS.map((d) => <div key={d}>{d}</div>)}
+            </div>
+            <div className="mt-1 grid grid-cols-7 gap-1">
+              {monthDays(month.year, month.index).map((date, index) => {
+                if (!date) return <div key={`empty-${index}`} className="h-9" />;
+                const d = parseYmd(date);
+                const on = draftDate === date;
+                const isToday = today === date;
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => setDraftDate(date)}
+                    className={`flex h-9 items-center justify-center rounded-full text-[13px] font-bold transition active:scale-95 ${
+                      on
+                        ? "bg-violet-600 text-white"
+                        : isToday
+                          ? "bg-violet-50 text-violet-700"
+                          : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    {d.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[12px] font-bold text-slate-600">Giờ hẹn</div>
+            <div className="grid grid-cols-4 gap-2">
+              {slots.map((time) => {
+                const on = draftTime === time;
+                return (
+                  <button
+                    key={time}
+                    type="button"
+                    onClick={() => setDraftTime(time)}
+                    className={`rounded-full px-2.5 py-2 text-[12.5px] font-bold transition active:scale-95 ${on ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
+                  >
+                    {time}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="shrink-0 border-t border-slate-100 px-4 py-3"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
+          <div className="mb-2 text-center text-[13px] font-bold text-slate-700">{formatWhenLabel(`${draftDate}T${draftTime}`)}</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl bg-slate-100 py-2.5 text-[14px] font-bold text-slate-600 transition active:scale-[0.98]"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={done}
+              className="rounded-xl bg-violet-600 py-2.5 text-[14px] font-bold text-white transition active:scale-[0.98]"
+            >
+              Xong
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AddedPhoto {
   file: File;
   url: string;
@@ -47,6 +267,7 @@ export default function SessionEditSheet({
   const [added, setAdded] = useState<AddedPhoto[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dateTimeOpen, setDateTimeOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Danh mục ĐTV + bác sĩ (không lọc chi nhánh: buổi cũ có thể ở chi nhánh khác).
@@ -139,7 +360,7 @@ export default function SessionEditSheet({
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <div className="no-scrollbar flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {canComplete && session && (
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
               <div className="text-[13px] font-bold text-emerald-700">Buổi đang điều trị</div>
@@ -162,12 +383,14 @@ export default function SessionEditSheet({
             <label className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
               <CalendarClock size={14} /> Ngày &amp; giờ
             </label>
-            <input
-              type="datetime-local"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] text-slate-700 outline-none focus:border-brand-400"
-            />
+            <button
+              type="button"
+              onClick={() => setDateTimeOpen(true)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-left text-[14px] font-semibold text-slate-700 outline-none transition hover:border-brand-300 focus:border-brand-400"
+            >
+              <span>{formatWhenLabel(when)}</span>
+              <CalendarClock size={16} className="text-slate-400" />
+            </button>
           </div>
 
           <div>
@@ -194,16 +417,13 @@ export default function SessionEditSheet({
                 </button>
                 {therapists.map((t) => {
                   const on = effTherapistId === t.id;
-                  const c = t.colorHex || "#7c3aed";
                   return (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setTherapistId(on ? null : t.id)}
-                      className={chipCls}
-                      style={chipStyle(c, on)}
+                      className={`${chipCls} ${on ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600"}`}
                     >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
                       {t.name}
                     </button>
                   );
@@ -234,16 +454,13 @@ export default function SessionEditSheet({
               </button>
               {doctors.map((d) => {
                 const on = doctorId === d.id;
-                const c = d.colorHex || "#0ea5e9";
                 return (
                   <button
                     key={d.id}
                     type="button"
                     onClick={() => setDoctorId(on ? null : d.id)}
-                    className={chipCls}
-                    style={chipStyle(c, on)}
+                    className={`${chipCls} ${on ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-600"}`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : c }} />
                     {d.name}
                   </button>
                 );
@@ -365,6 +582,14 @@ export default function SessionEditSheet({
           </button>
         </div>
       </div>
+
+      {dateTimeOpen && (
+        <DateTimePickerSheet
+          value={when}
+          onChange={setWhen}
+          onClose={() => setDateTimeOpen(false)}
+        />
+      )}
     </div>
   );
 }
