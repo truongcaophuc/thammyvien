@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, Loader2, MapPin, MonitorCog, Search, Tag } from "lucide-react";
+import { Loader2, MapPin, MonitorCog, Search, Tag } from "lucide-react";
 import { fetchTechnicianAppointments, type AppointmentResource, type TechnicianAppointment } from "../../lib/technician";
 import { chipStyle } from "../../lib/chipColor";
 import DatePickerSheet, { DatePickerButton } from "../../components/DatePickerSheet";
