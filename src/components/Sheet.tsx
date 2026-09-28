@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 /** Bottom sheet trượt lên từ đáy, có backdrop, khoá scroll nền */
@@ -26,7 +27,9 @@ export default function Sheet({
     };
   }, [onClose]);
 
-  return (
+  // Portal ra document.body: thoát khỏi khung "điện thoại" (max-w-md + overflow-hidden)
+  // để lớp phủ fixed luôn phủ trọn viewport, không bị tổ tiên cắt/neo.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div
         className="absolute inset-0 bg-slate-900/40 animate-[fadeIn_.2s_ease]"
@@ -62,6 +65,7 @@ export default function Sheet({
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
