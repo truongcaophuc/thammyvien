@@ -4,9 +4,14 @@
 export type LeadStatus = "new" | "overdue" | "callback" | "scheduled" | "closed";
 
 export interface CallHistory {
+  id: string;
   time: string;
+  calledAt?: string;
   result: string;
+  note?: string;
   tone?: "neutral" | "warning" | "success";
+  recordingUrl?: string;
+  recordingFileName?: string;
 }
 
 export interface Lead {
@@ -15,7 +20,6 @@ export interface Lead {
   phone: string;
   source: string; // nguồn: trang Facebook, Zalo...
   need: string; // nhu cầu
-  note: string; // ghi chú
   receivedAt: string;
   status: LeadStatus;
   badge?: string; // nhãn phụ hiển thị trên card

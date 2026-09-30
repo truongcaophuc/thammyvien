@@ -81,7 +81,7 @@ export default function CallScriptSheet({
   }
 
   async function runAi() {
-    const q = (lead.need || lead.note || "").trim();
+    const q = (lead.need || "").trim();
     if (!q || aiLoading) return;
     setAiLoading(true); setAi(null); setCollapsed(new Set());
     try {

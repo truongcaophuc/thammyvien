@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -23,11 +23,13 @@ import {
   Image as ImageIcon,
   X,
   Trash2,
+  Upload,
+  Mic,
 } from "lucide-react";
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
-import { saveCallResult } from "../lib/callResult";
-import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, type LeadProfile, type SkinPhoto } from "../lib/leads";
+import { saveCallResult, updateCallNote, updateCallRecording } from "../lib/callResult";
+import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, fileToBase64, type AudioFileInput, type LeadProfile, type SkinPhoto } from "../lib/leads";
 import { fetchKbPinned } from "../lib/kb";
 import Sheet from "../components/Sheet";
 import CustomSelect from "../components/CustomSelect";
@@ -43,6 +45,14 @@ function formatHm(iso: string): string {
 function ddmm(iso: string): string {
   const [, m, d] = iso.split("-");
   return `${d}/${m}`;
+}
+function displayCallTime(h: Lead["history"][number]): string {
+  if (!h.calledAt) return h.time;
+  const d = new Date(h.calledAt);
+  const date = d.toLocaleDateString("vi-VN");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${date} ${hh}:${mm}`;
 }
 // hôm nay theo local "YYYY-MM-DD"
 function localTodayIso(): string {
@@ -101,6 +111,86 @@ function InfoRow({
   );
 }
 
+function RecordingPicker({
+  value,
+  disabled,
+  compact,
+  hasCurrent,
+  onChange,
+}: {
+  value: AudioFileInput | null;
+  disabled?: boolean;
+  compact?: boolean;
+  hasCurrent?: boolean;
+  onChange: (value: AudioFileInput | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const url = useMemo(() => {
+    if (!value?.base64) return "";
+    const ext = value.fileName.toLowerCase().split(".").pop();
+    const mime = ext === "mp3" ? "audio/mpeg" : ext === "m4a" || ext === "mp4" ? "audio/mp4" : ext === "wav" ? "audio/wav" : "audio/webm";
+    return `data:${mime};base64,${value.base64}`;
+  }, [value]);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("audio/")) {
+      setErr("Chỉ chấp nhận file ghi âm.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setErr("File ghi âm tối đa 25MB.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      onChange(await fileToBase64(file));
+    } catch {
+      setErr("Không đọc được file ghi âm.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={compact ? "mt-2" : "mt-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-3"}>
+      {!compact && (
+        <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+          <Mic size={13} /> File ghi âm
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-bold text-slate-500 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 ${disabled || busy ? "pointer-events-none opacity-60" : ""}`}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+          {value || hasCurrent ? "Đổi file ghi âm" : compact ? "Thêm file ghi âm" : "Chọn file"}
+          <input type="file" accept="audio/*" className="hidden" disabled={disabled || busy} onChange={pick} />
+        </label>
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            disabled={disabled}
+            className="cursor-pointer rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-slate-400 hover:bg-white hover:text-rose-500 disabled:opacity-60"
+          >
+            Xóa
+          </button>
+        )}
+      </div>
+      {value && (
+        <div className="mt-2">
+          <div className="mb-1 truncate text-[12.5px] text-slate-500">{value.fileName}</div>
+          <audio src={url} controls preload="none" className="w-full" />
+        </div>
+      )}
+      {err && <div className="mt-1.5 text-[12px] text-rose-500">{err}</div>}
+    </div>
+  );
+}
+
 export default function LeadDetail({
   lead,
   onBack,
@@ -114,8 +204,7 @@ export default function LeadDetail({
 }) {
   const meta = statusMeta[lead.status];
   // Lead ở trạng thái cuối (closed = đã đóng, scheduled = đã đặt lịch):
-  // chỉ cho phép bổ sung ghi chú, ẩn radio kết quả + booking UI.
-  // Workflow đã settled — agent không cần "cập nhật kết quả" nữa.
+  // workflow đã settled, chỉ sửa ghi chú/ghi âm ngay trên từng dòng lịch sử.
   const isFinalState = lead.status === "closed" || lead.status === "scheduled";
 
   const [result, setResult] = useState<ResultKey | null>(null);
@@ -123,6 +212,10 @@ export default function LeadDetail({
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [slot, setSlot] = useState<string | null>(null); // ISO startAt của khung giờ đã chọn
   const [notes, setNotes] = useState("");
+  const [recording, setRecording] = useState<AudioFileInput | null>(null);
+  const [historyRecordings, setHistoryRecordings] = useState<Record<string, AudioFileInput | null>>({});
+  const [callSheetIndex, setCallSheetIndex] = useState<number | null>(null);
+  const [historyNotes, setHistoryNotes] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [slots, setSlots] = useState<ArrivalSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -139,7 +232,10 @@ export default function LeadDetail({
   const [profile, setProfile] = useState<LeadProfile | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchLeadProfile(lead.id).then((p) => { if (!cancelled) setProfile(p); }).catch(() => {});
+    fetchLeadProfile(lead.id).then((p) => {
+      if (cancelled) return;
+      setProfile(p);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [lead.id]);
 
@@ -262,12 +358,38 @@ export default function LeadDetail({
     return () => { cancelled = true; };
   }, [showBooking, editingAppt, selectedIso, branch?.id]);
 
+  const showCallResultForm = !isFinalState;
+  const showActionCard = showCallResultForm || editingAppt || !!appt;
+  const showSaveBar = showCallResultForm || editingAppt;
+
   // P2 — discard confirmation: popup khi user back với data đang nhập (thay window.confirm).
-  const hasUnsavedData = !!result || notes.trim().length > 0;
+  const hasUnsavedData = showCallResultForm && (!!result || notes.trim().length > 0 || !!recording);
   const handleBack = () => {
     if (hasUnsavedData) { setShowDiscard(true); return; }
     onBack();
   };
+
+  async function saveCallDetails(callId: string, note: string, audio: AudioFileInput | null) {
+    setSaving(true);
+    try {
+      await updateCallNote({ callId, notes: note.trim() });
+      if (audio) {
+        await updateCallRecording({
+          callId,
+          recordingBase64: audio.base64,
+          recordingFileName: audio.fileName,
+        });
+      }
+      setHistoryNotes((prev) => ({ ...prev, [callId]: note.trim() }));
+      setHistoryRecordings((prev) => ({ ...prev, [callId]: null }));
+      setCallSheetIndex(null);
+      onSaved("Đã cập nhật cuộc gọi");
+    } catch (e) {
+      onSaved(`⚠ Lỗi: ${e instanceof Error ? e.message : "cập nhật cuộc gọi thất bại"}`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const save = async () => {
     if (saving) return;
@@ -290,43 +412,31 @@ export default function LeadDetail({
       return;
     }
 
-    // Final state: cho phép save khi user chỉ ghi notes (không cần chọn result).
-    // BE map fallback result theo current status, không đổi Customer.Status thực tế.
-    if (!isFinalState && !result) return;
-    if (isFinalState && !notes.trim()) return; // không có gì để save
+    if (!result) return;
 
     setSaving(true);
     const noteSuffix = notes.trim() ? ` — "${notes.trim().slice(0, 40)}${notes.trim().length > 40 ? "…" : ""}"` : "";
 
     try {
-      // Effective result gửi lên BE.
-      // - Non-final: dùng radio user chọn
-      // - Final closed: gửi REJECTED (BE map → CLOSED, status đã CLOSED rồi nên no-op)
-      // - Final scheduled: gửi BOOKED không kèm appointmentDate (BE skip insert Appointment,
-      //   Customer.Status đã SCHEDULED nên no-op). Mục đích chỉ insert ContactCall log notes.
-      const effectiveResult: ResultKey = isFinalState
-        ? lead.status === "closed" ? "REJECTED" : "BOOKED"
-        : result!;
-
       // appointmentDate = ISO startAt của khung giờ thật đã chọn (từ availability).
       let appointmentDate: string | undefined;
-      if (!isFinalState && showBooking && slot) {
+      if (showBooking && slot) {
         appointmentDate = slot;
       }
 
       const res = await saveCallResult({
         leadId: lead.id,
-        result: effectiveResult,
+        result,
         notes: notes.trim() || undefined,
         appointmentDate,
-        locationId: (!isFinalState && showBooking) ? branch?.id : undefined,
+        locationId: showBooking ? branch?.id : undefined,
+        recordingBase64: recording?.base64,
+        recordingFileName: recording?.fileName,
       });
 
       if (!res.success) throw new Error("BE trả success=false");
 
-      if (isFinalState) {
-        onSaved(`Đã cập nhật ghi chú cho ${lead.name}`);
-      } else if (showBooking) {
+      if (showBooking) {
         onSaved(`Đã đặt lịch ${lead.name} · ${selDDMM} ${slot ? formatHm(slot) : ""} tại ${branch?.name ?? "cơ sở"}${noteSuffix}`);
       } else {
         const label = resultOptions.find((r) => r.key === result)!.label;
@@ -370,7 +480,10 @@ export default function LeadDetail({
   };
 
   const saveDisabled = saving
-    || (editingAppt ? !slot : isFinalState ? !notes.trim() : !result || (showBooking && !slot));
+    || (editingAppt
+      ? !slot
+      : !result || (showBooking && !slot));
+  const callSheetItem = callSheetIndex !== null ? lead.history[callSheetIndex] : null;
 
   return (
     <div className="min-h-full pb-28">
@@ -527,9 +640,17 @@ export default function LeadDetail({
           ) : (
             <div className="divide-y divide-slate-100">
               {lead.history.map((h, i) => (
-                <div key={i} className="flex items-center gap-3 py-3">
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setHistoryNotes((prev) => ({ ...prev, [h.id]: prev[h.id] ?? h.note ?? "" }));
+                    setCallSheetIndex(i);
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-2.5 py-3 text-left transition-colors hover:bg-slate-50"
+                >
                   <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                       h.tone === "success"
                         ? "bg-emerald-100 text-emerald-600"
                         : h.tone === "warning"
@@ -538,34 +659,36 @@ export default function LeadDetail({
                     }`}
                   >
                     {h.tone === "success" ? (
-                      <CheckCircle2 size={16} />
+                      <CheckCircle2 size={15} />
                     ) : h.tone === "warning" ? (
-                      <PhoneMissed size={16} />
+                      <PhoneMissed size={15} />
                     ) : (
-                      <Phone size={16} />
+                      <Phone size={15} />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[14px] font-medium text-slate-700">{h.result}</div>
-                    <div className="text-[12px] text-slate-400">{h.time}</div>
+                    <div className="flex min-w-0 items-center gap-1.5 text-[13.5px] leading-tight">
+                      <span className="truncate font-bold text-slate-800">{h.result}</span>
+                      <span className="shrink-0 text-slate-300">·</span>
+                      <span className="shrink-0 text-[12px] font-medium text-slate-400">{displayCallTime(h)}</span>
+                    </div>
                   </div>
-                </div>
+                  <ChevronRight size={16} className="shrink-0 text-slate-300" />
+                </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Cập nhật kết quả cuộc gọi — card neutral, không viền tím.
-            Final state (closed/scheduled): ẩn radio + booking, chỉ show notes textarea
-            (textarea đã có label "GHI CHÚ" riêng nên không cần card title). */}
+        {showActionCard && (
         <div className="rounded-2xl2 bg-white p-4 shadow-card">
-          {!isFinalState && (
+          {showCallResultForm && (
             <div className="mb-3 text-[12px] font-bold uppercase tracking-wide text-slate-400">
               Cập nhật kết quả cuộc gọi
             </div>
           )}
 
-          {!isFinalState && (
+          {showCallResultForm && (
           <div className="space-y-2">
             {resultOptions.map((opt) => {
               const on = result === opt.key;
@@ -658,7 +781,7 @@ export default function LeadDetail({
           )}
 
           {/* Đặt lịch hẹn — khi chọn BOOKED (mới) hoặc đổi lịch (edit) */}
-          {((!isFinalState && showBooking) || editingAppt) && (
+          {((showCallResultForm && showBooking) || editingAppt) && (
             <div className="mt-4 space-y-4 rounded-2xl border border-emerald-100 bg-white p-4">
               <div className="flex items-center gap-2 text-[14.5px] font-bold text-slate-800">
                 <CalendarDays size={18} className="text-emerald-600" /> {editingAppt ? "Đổi lịch hẹn" : "Đặt lịch hẹn tại cơ sở"}
@@ -799,29 +922,34 @@ export default function LeadDetail({
             </div>
           )}
 
-          {/* P1 — Ghi chú LUÔN visible (không phụ thuộc result). Agent có thể ghi
-              note trước/sau/cùng lúc chọn radio. UX rõ ràng hơn. */}
-          <div className="mt-4">
-            <label className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
-              <Pencil size={13} /> Ghi chú
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value.slice(0, 500))}
-              placeholder="Nội dung trao đổi, ghi chú về khách, hẹn lại lúc nào..."
-              rows={3}
-              maxLength={500}
-              className="w-full resize-none rounded-xl border-2 border-slate-100 bg-white px-3 py-2.5 text-[14px] text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-300"
-            />
-            <div className="mt-1 text-right text-[11px] text-slate-400">
-              {notes.length}/500
+          {showCallResultForm && (
+            <div className="mt-4">
+              <label className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                <Pencil size={13} /> Ghi chú cuộc gọi
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value.slice(0, 500))}
+                placeholder="Nội dung trao đổi, hẹn lại lúc nào..."
+                rows={3}
+                maxLength={500}
+                className="w-full resize-none rounded-xl border-2 border-slate-100 bg-white px-3 py-2.5 text-[14px] text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-300"
+              />
+              <div className="mt-1 text-right text-[11px] text-slate-400">
+                {notes.length}/500
+              </div>
             </div>
-          </div>
+          )}
+          {showCallResultForm && (
+            <RecordingPicker value={recording} disabled={saving} onChange={setRecording} />
+          )}
         </div>
+        )}
       </div>
 
       {/* Sticky bottom save bar — constrain width vào max-w-md container giống content.
           Trên desktop preview (>448px), bar không tràn ra ngoài khung phone-frame. */}
+      {showSaveBar && (
       <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
         <button
           onClick={save}
@@ -838,15 +966,14 @@ export default function LeadDetail({
               <Save size={18} />{" "}
               {editingAppt
                 ? "Lưu đổi lịch"
-                : isFinalState
-                  ? "Cập nhật ghi chú"
-                  : showBooking
+                : showBooking
                     ? "Xác nhận đặt lịch"
                     : "Lưu kết quả"}
             </>
           )}
         </button>
       </div>
+      )}
 
       {/* Popup xác nhận rời trang khi đang nhập dở (thay window.confirm) */}
       {showDiscard && (
@@ -962,6 +1089,76 @@ export default function LeadDetail({
           onChange={setSelectedIso}
           onClose={() => setDatePickerOpen(false)}
         />
+      )}
+
+      {callSheetItem && (
+        <Sheet title="Cập nhật cuộc gọi" onClose={() => setCallSheetIndex(null)} bg="#ffffff">
+          <div className="px-4 pb-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-[12px] font-bold uppercase tracking-wide text-slate-400">
+                {callSheetItem.result}
+              </div>
+              <div className="mt-0.5 text-[13px] text-slate-500">{callSheetItem.time}</div>
+              {callSheetItem.recordingUrl ? (
+                <div className="mt-3">
+                  <div className="mb-1 truncate text-[12.5px] font-medium text-slate-500">
+                    {callSheetItem.recordingFileName || "File ghi âm cuộc gọi"}
+                  </div>
+                  <audio src={callSheetItem.recordingUrl} controls preload="metadata" className="w-full" />
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-center text-[13px] text-slate-400">
+                  Cuộc gọi này chưa có file ghi âm
+                </div>
+              )}
+            </div>
+
+            <label className="mt-4 block text-[12px] font-bold uppercase tracking-wide text-slate-400">
+              Ghi chú cuộc gọi này
+            </label>
+            <textarea
+              value={historyNotes[callSheetItem.id] ?? callSheetItem.note ?? ""}
+              onChange={(e) => setHistoryNotes((prev) => ({ ...prev, [callSheetItem.id]: e.target.value.slice(0, 500) }))}
+              rows={5}
+              maxLength={500}
+              placeholder="Nhập ghi chú cho cuộc gọi này..."
+              className="mt-2 w-full resize-none rounded-xl border-2 border-slate-100 bg-white px-3 py-2.5 text-[14px] text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-300"
+            />
+            <div className="mt-1 text-right text-[11px] text-slate-400">
+              {(historyNotes[callSheetItem.id] ?? callSheetItem.note ?? "").length}/500
+            </div>
+
+            <RecordingPicker
+              value={historyRecordings[callSheetItem.id] ?? null}
+              disabled={saving}
+              hasCurrent={!!callSheetItem.recordingUrl}
+              onChange={(value) => setHistoryRecordings((prev) => ({ ...prev, [callSheetItem.id]: value }))}
+            />
+
+            <div className="sticky bottom-0 mt-4 grid grid-cols-[1fr_2fr] gap-2 border-t border-slate-100 bg-white pb-1 pt-3">
+              <button
+                type="button"
+                onClick={() => setCallSheetIndex(null)}
+                className="cursor-pointer rounded-xl bg-slate-100 py-3 text-[14px] font-semibold text-slate-600 hover:bg-slate-200"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => saveCallDetails(
+                  callSheetItem.id,
+                  historyNotes[callSheetItem.id] ?? callSheetItem.note ?? "",
+                  historyRecordings[callSheetItem.id] ?? null,
+                )}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 py-3 text-[14.5px] font-bold text-white shadow-soft transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+                Lưu cập nhật
+              </button>
+            </div>
+          </div>
+        </Sheet>
       )}
 
       {/* Popup Nguyên tắc tư vấn — LUÔN mở khi bấm Gọi ngay; dial chỉ qua "Tiếp tục gọi".

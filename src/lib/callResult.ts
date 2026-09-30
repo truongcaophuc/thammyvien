@@ -10,6 +10,8 @@ export interface SaveCallResultInput {
   appointmentDate?: string;
   // Chi nhánh đặt lịch (BOOKED). Null → CEP dùng chi nhánh mặc định.
   locationId?: string;
+  recordingBase64?: string;
+  recordingFileName?: string;
 }
 
 export interface SaveCallResultPayload {
@@ -36,4 +38,39 @@ export async function saveCallResult(
     { input },
   );
   return data.saveCallResult;
+}
+
+const UPDATE_CALL_RECORDING_MUTATION = `
+  mutation UpdateCallRecording($callId: UUID!, $recordingBase64: String!, $recordingFileName: String!) {
+    updateCallRecording(callId: $callId, recordingBase64: $recordingBase64, recordingFileName: $recordingFileName)
+  }
+`;
+
+export async function updateCallRecording(input: {
+  callId: string;
+  recordingBase64: string;
+  recordingFileName: string;
+}): Promise<boolean> {
+  const data = await gql<{ updateCallRecording: boolean }>(
+    UPDATE_CALL_RECORDING_MUTATION,
+    input,
+  );
+  return data.updateCallRecording;
+}
+
+const UPDATE_CALL_NOTE_MUTATION = `
+  mutation UpdateCallNote($callId: UUID!, $notes: String!) {
+    updateCallNote(callId: $callId, notes: $notes)
+  }
+`;
+
+export async function updateCallNote(input: {
+  callId: string;
+  notes: string;
+}): Promise<boolean> {
+  const data = await gql<{ updateCallNote: boolean }>(
+    UPDATE_CALL_NOTE_MUTATION,
+    input,
+  );
+  return data.updateCallNote;
 }

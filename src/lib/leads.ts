@@ -13,6 +13,8 @@ interface ServerCallHistory {
   result: string;
   notes: string;
   resultCode: string; // C1b/C2/C5/F1/F4...
+  recordingUrl: string;
+  recordingFileName: string;
 }
 
 interface MyLeadsResponse {
@@ -21,7 +23,6 @@ interface MyLeadsResponse {
     name: string;
     phone: string;
     source: string;
-    note: string;
     need: string | null; // nhu cầu từ intake (Prospect.AdditionalJsonData.source.need); null nếu lead không qua form
     status: ServerStatus;
     receivedAt: string; // ISO 8601
@@ -39,7 +40,6 @@ const MY_LEADS_QUERY = `
       name
       phone
       source
-      note
       need
       status
       receivedAt
@@ -52,6 +52,8 @@ const MY_LEADS_QUERY = `
         result
         notes
         resultCode
+        recordingUrl
+        recordingFileName
       }
     }
   }
@@ -67,8 +69,7 @@ export async function fetchMyLeads(): Promise<Lead[]> {
       name: l.name,
       phone: l.phone,
       source: l.source,
-      need: l.need && l.need.trim() ? l.need.trim() : extractNeed(l.note),
-      note: l.note,
+      need: l.need && l.need.trim() ? l.need.trim() : "",
       receivedAt: formatReceivedAt(received),
       status,
       badge: badgeOf(status),
@@ -102,10 +103,33 @@ export async function setLeadInterested(leadId: string, interested: boolean): Pr
 // Cx (Contacted) family = neutral/success, Fx (Failed) = warning.
 function mapCallHistory(h: ServerCallHistory): CallHistory {
   return {
-    time: formatRelative(new Date(h.calledAt)),
-    result: h.notes && h.notes.trim().length > 0 ? h.notes : h.result,
+    id: h.id,
+    time: formatCallDateTime(new Date(h.calledAt)),
+    calledAt: h.calledAt,
+    result: formatCallResult(h.result, h.resultCode),
+    note: h.notes || "",
     tone: toneOfResultCode(h.resultCode),
+    recordingUrl: h.recordingUrl || undefined,
+    recordingFileName: h.recordingFileName || undefined,
   };
+}
+
+function formatCallResult(result: string, code: string): string {
+  const normalized = (result || "").trim();
+  const upperResult = normalized.toUpperCase();
+  const upperCode = (code || "").toUpperCase();
+  if (upperResult === "SUBMITTED" || upperCode === "C5") return "Đã đặt lịch";
+  if (upperResult === "REJECTED") return "Từ chối";
+  if (upperResult === "CALLBACK") return "Hẹn gọi lại";
+  if (upperResult === "WRONG_NUMBER") return "Sai số";
+  return normalized || "Cuộc gọi";
+}
+
+function formatCallDateTime(d: Date): string {
+  const date = d.toLocaleDateString("vi-VN");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${date} ${hh}:${mm}`;
 }
 
 function toneOfResultCode(code: string): "neutral" | "warning" | "success" {
@@ -180,19 +204,10 @@ function formatRelative(d: Date): string {
 }
 
 function formatReceivedAt(d: Date): string {
-  const hours = (Date.now() - d.getTime()) / 3600000;
-  if (hours < 12) {
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm} hôm nay`;
-  }
-  return formatRelative(d);
-}
-
-function extractNeed(note: string): string {
-  if (!note) return "";
-  const firstSentence = note.split(/[.!?]/, 1)[0]?.trim();
-  return firstSentence || note.slice(0, 60);
+  const date = d.toLocaleDateString("vi-VN");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${date} ${hh}:${mm}`;
 }
 
 // ===== Hồ sơ ĐẦY ĐỦ của lead (card "Thông tin khách" trên LeadDetail) =====
@@ -277,4 +292,25 @@ export async function deleteLeadPhoto(fileId: string): Promise<void> {
     try { msg = (await res.json())?.message || msg; } catch { /* ignore */ }
     throw new Error(msg);
   }
+}
+
+export interface AudioFileInput {
+  fileName: string;
+  base64: string;
+}
+
+export function fileToBase64(file: File): Promise<AudioFileInput> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result);
+      const comma = res.indexOf(",");
+      resolve({
+        fileName: file.name || "ghi-am.webm",
+        base64: comma >= 0 ? res.slice(comma + 1) : res,
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
