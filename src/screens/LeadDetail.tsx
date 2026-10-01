@@ -157,7 +157,7 @@ function RecordingPicker({
   }
 
   return (
-    <div className={compact ? "mt-2" : "mt-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-3"}>
+    <div className={compact ? "mt-2" : "mt-4 border border-slate-100 bg-white p-3"}>
       {!compact && (
         <div className="mb-2 flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-slate-400">
           <Mic size={13} /> File ghi âm
@@ -680,6 +680,10 @@ export default function LeadDetail({
           )}
         </div>
 
+        {showCallResultForm && (
+          <RecordingPicker value={recording} disabled={saving} onChange={setRecording} />
+        )}
+
         {showActionCard && (
         <div className="rounded-2xl2 bg-white p-4 shadow-card">
           {showCallResultForm && (
@@ -939,9 +943,6 @@ export default function LeadDetail({
                 {notes.length}/500
               </div>
             </div>
-          )}
-          {showCallResultForm && (
-            <RecordingPicker value={recording} disabled={saving} onChange={setRecording} />
           )}
         </div>
         )}

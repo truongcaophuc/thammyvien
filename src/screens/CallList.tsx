@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Phone, Search, CalendarX, Flame } from "lucide-react";
+import { Phone, Search, CalendarX, Flame, ListFilter, Check } from "lucide-react";
 import type { Lead, LeadStatus } from "../data";
 import { Badge } from "../components/common";
 import { Skeleton } from "../components/Skeleton";
 import { fetchMyLeads } from "../lib/leads";
+import Sheet from "../components/Sheet";
 
 export type FilterKey = "to_call" | "overdue" | "callback" | "scheduled" | "closed";
 
@@ -47,6 +48,7 @@ function badgeTone(l: Lead) {
 
 // Nhớ tab đang chọn qua điều hướng (module-level → sống suốt phiên, không mất khi mở lead rồi back).
 let rememberedFilter: FilterKey = "to_call";
+let rememberedReverseSort = false;
 export function setListFilter(k: FilterKey) { rememberedFilter = k; }
 // Cache list qua điều hướng: back thì hiện ngay cache (không skeleton), refetch ngầm để cập nhật.
 let leadsCache: Lead[] | null = null;
@@ -57,7 +59,14 @@ export default function CallList({
   onOpenLead: (l: Lead) => void;
 }) {
   const [active, setActive] = useState<FilterKey>(rememberedFilter);
-  const selectFilter = (k: FilterKey) => { rememberedFilter = k; setActive(k); };
+  const [reverseSort, setReverseSort] = useState(rememberedReverseSort);
+  const [sortSheetOpen, setSortSheetOpen] = useState(false);
+  const selectFilter = (k: FilterKey) => {
+    rememberedFilter = k;
+    rememberedReverseSort = false;
+    setReverseSort(false);
+    setActive(k);
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [allLeads, setAllLeads] = useState<Lead[]>(leadsCache ?? []);
   const [loading, setLoading] = useState(leadsCache === null);
@@ -103,18 +112,45 @@ export default function CallList({
     const q = searchQuery.trim().toLowerCase();
     // CÓ từ khoá → tìm trên TẤT CẢ lead (mọi trạng thái, bỏ qua tab).
     // KHÔNG có từ khoá → lọc theo tab đang chọn.
+    let filtered: Lead[];
     if (q) {
       const qPhone = q.replace(/[^0-9+]/g, ""); // strip non-digit để match phone có space/dash
-      return allLeads.filter((l) => {
+      filtered = allLeads.filter((l) => {
         const nameMatch = l.name.toLowerCase().includes(q);
         const phoneMatch = qPhone.length > 0
           && l.phone.replace(/[^0-9+]/g, "").includes(qPhone);
         return nameMatch || phoneMatch;
       });
+    } else {
+      const f = filters.find((x) => x.key === active)!;
+      filtered = allLeads.filter((l) => f.match.includes(l.status));
     }
-    const f = filters.find((x) => x.key === active)!;
-    return allLeads.filter((l) => f.match.includes(l.status));
-  }, [active, allLeads, searchQuery]);
+
+    const timeOf = (lead: Lead) => {
+      const value = active === "callback"
+        ? lead.callbackAt || lead.updatedAt || lead.receivedAtIso
+        : active === "scheduled"
+          ? lead.appointmentAt || lead.updatedAt || lead.receivedAtIso
+          : active === "closed"
+            ? lead.updatedAt || lead.receivedAtIso
+            : lead.receivedAtIso;
+      const time = new Date(value).getTime();
+      return Number.isNaN(time) ? 0 : time;
+    };
+    // Mới/Quá hạn/Gọi lại/Lịch hẹn: mốc sớm nhất trước. Đã đóng: cập nhật mới nhất trước.
+    const defaultDirection = active === "closed" ? -1 : 1;
+    const direction = reverseSort ? -defaultDirection : defaultDirection;
+    return [...filtered].sort((a, b) => direction * (timeOf(a) - timeOf(b)));
+  }, [active, allLeads, reverseSort, searchQuery]);
+
+  const sortLabel = active === "scheduled"
+    ? "Ngày hẹn"
+    : active === "callback"
+      ? "Ngày gọi lại"
+      : active === "closed"
+        ? "Ngày cập nhật"
+        : "Ngày nhận";
+  const newestFirst = active === "closed" ? !reverseSort : reverseSort;
 
   return (
     <div className="pb-4">
@@ -125,24 +161,34 @@ export default function CallList({
           {/* <Badge tone="slate">{allLeads.length} lead</Badge> */}
         </div>
 
-        {/* Ô tìm kiếm — filter theo tên (substring) hoặc phone (chỉ digit) */}
-        <div className="mt-3 flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 shadow-card">
-          <Search size={17} className="text-slate-400" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo tên hoặc số điện thoại"
-            className="w-full bg-transparent text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              aria-label="Xoá tìm kiếm"
-              className="cursor-pointer text-slate-400 hover:text-slate-600"
-            >
-              ✕
-            </button>
-          )}
+        {/* Tìm kiếm + sắp xếp là hai công cụ thao tác trực tiếp trên danh sách. */}
+        <div className="mt-3 flex gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-white px-3 py-2.5 shadow-card">
+            <Search size={17} className="shrink-0 text-slate-400" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm tên hoặc SĐT"
+              className="min-w-0 flex-1 bg-transparent text-[14px] text-slate-700 outline-none placeholder:text-slate-400"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                aria-label="Xóa tìm kiếm"
+                className="cursor-pointer text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setSortSheetOpen(true)}
+            aria-label="Mở tùy chọn sắp xếp"
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-slate-500 shadow-card transition-colors hover:text-brand-600 active:bg-brand-50"
+          >
+            <ListFilter size={18} />
+          </button>
         </div>
 
         {/* Filter chips — horizontal scroll khi overflow.
@@ -261,6 +307,42 @@ export default function CallList({
           </div>
         )}
       </div>
+
+      {sortSheetOpen && (
+        <Sheet title="Sắp xếp danh sách" onClose={() => setSortSheetOpen(false)} bg="#ffffff">
+          <div className="px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+            <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-slate-400">
+              Theo {sortLabel.toLowerCase()}
+            </div>
+            {[
+              { newest: false, label: "Cũ nhất trước" },
+              { newest: true, label: "Mới nhất trước" },
+            ].map((option) => {
+              const selected = newestFirst === option.newest;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  onClick={() => {
+                    const nextReverse = active === "closed" ? !option.newest : option.newest;
+                    rememberedReverseSort = nextReverse;
+                    setReverseSort(nextReverse);
+                    setSortSheetOpen(false);
+                  }}
+                  className={`mb-2 flex w-full cursor-pointer items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                    selected
+                      ? "border-brand-300 bg-brand-50 text-brand-700"
+                      : "border-slate-100 bg-white text-slate-700 hover:border-slate-200"
+                  }`}
+                >
+                  <span className="flex-1 text-[14px] font-semibold">{option.label}</span>
+                  {selected && <Check size={18} className="shrink-0 text-brand-600" />}
+                </button>
+              );
+            })}
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }

@@ -26,6 +26,9 @@ interface MyLeadsResponse {
     need: string | null; // nhu cầu từ intake (Prospect.AdditionalJsonData.source.need); null nếu lead không qua form
     status: ServerStatus;
     receivedAt: string; // ISO 8601
+    callbackAt: string | null;
+    appointmentAt: string | null;
+    updatedAt: string | null;
     callbackSource: string; // "telesale" | "reception" | "" — nguồn của trạng thái Gọi lại
     callbackReason: string; // lý do (chủ yếu khi reception hủy lịch trả về)
     isInterested: boolean; // cờ "Quan tâm / đang cân nhắc" (BE: Prospect.IsInterested, đổi tên từ isHot)
@@ -43,6 +46,9 @@ const MY_LEADS_QUERY = `
       need
       status
       receivedAt
+      callbackAt
+      appointmentAt
+      updatedAt
       callbackSource
       callbackReason
       isInterested
@@ -71,6 +77,10 @@ export async function fetchMyLeads(): Promise<Lead[]> {
       source: l.source,
       need: l.need && l.need.trim() ? l.need.trim() : "",
       receivedAt: formatReceivedAt(received),
+      receivedAtIso: l.receivedAt,
+      callbackAt: l.callbackAt || undefined,
+      appointmentAt: l.appointmentAt || undefined,
+      updatedAt: l.updatedAt || undefined,
       status,
       badge: badgeOf(status),
       subtitle: subtitleOf(status, received),

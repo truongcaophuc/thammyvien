@@ -21,6 +21,10 @@ export interface Lead {
   source: string; // nguồn: trang Facebook, Zalo...
   need: string; // nhu cầu
   receivedAt: string;
+  receivedAtIso: string;
+  callbackAt?: string;
+  appointmentAt?: string;
+  updatedAt?: string;
   status: LeadStatus;
   badge?: string; // nhãn phụ hiển thị trên card
   subtitle?: string; // dòng phụ
