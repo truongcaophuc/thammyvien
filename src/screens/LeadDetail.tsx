@@ -29,7 +29,7 @@ import {
 import type { DayOption, Lead, ResultKey } from "../data";
 import { statusMeta } from "../components/common";
 import { saveCallResult, updateCallNote, updateCallRecording } from "../lib/callResult";
-import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, fileToBase64, type AudioFileInput, type LeadProfile, type SkinPhoto } from "../lib/leads";
+import { setLeadInterested, fetchLeadProfile, fetchLeadSkinPhotos, uploadLeadPhotos, deleteLeadPhoto, fileToBase64, formatLeadProfileValue, type AudioFileInput, type LeadProfile, type SkinPhoto } from "../lib/leads";
 import { fetchKbPinned } from "../lib/kb";
 import Sheet from "../components/Sheet";
 import CustomSelect from "../components/CustomSelect";
@@ -564,7 +564,7 @@ export default function LeadDetail({
             ["Địa chỉ", profile.address],
             ["Nghề nghiệp", profile.job],
           ];
-          const attrRows: [string, string][] = profile.attributes.map((a): [string, string] => [a.label, a.value]);
+          const attrRows: [string, string][] = profile.attributes.map((a): [string, string] => [a.label, formatLeadProfileValue(a.value)]);
           const rows = [...baseRows, ...attrRows].filter(([, v]) => !!v);
           if (!rows.length) return null;
           return (

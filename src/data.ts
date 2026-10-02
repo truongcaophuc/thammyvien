@@ -35,6 +35,22 @@ export interface Lead {
   history: CallHistory[];
 }
 
+export interface ConsultantCall {
+  id: string;
+  leadId: string;
+  leadName: string;
+  phone: string;
+  source: string;
+  need: string;
+  calledAt: string;
+  calledAtIso: string;
+  result: string;
+  resultCode: string;
+  notes: string;
+  recordingUrl?: string;
+  recordingFileName?: string;
+}
+
 export interface Appointment {
   id: string;
   name: string;

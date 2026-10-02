@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, Loader2, UserRound } from "lucide-react";
-import { fetchLeadProfile, type LeadProfile } from "../lib/leads";
+import { fetchLeadProfile, formatLeadProfileValue, type LeadProfile } from "../lib/leads";
 
 // Hồ sơ khách do Telesale nhập (cơ bản + thuộc tính DynamicForm) — DÙNG CHUNG cho ĐTV & CSKH.
 // leadProfile nhận Customer.Id nên khách điều trị dùng thẳng patient.id, không cần query riêng.
@@ -27,7 +27,7 @@ export default function CustomerProfileCard({ customerId }: { customerId: string
         ["Email", profile.email],
         ["Địa chỉ", profile.address],
         ["Nghề nghiệp", profile.job],
-        ...profile.attributes.map((a): [string, string] => [a.label, a.value]),
+        ...profile.attributes.map((a): [string, string] => [a.label, formatLeadProfileValue(a.value)]),
       ] as [string, string][]).filter(([, v]) => !!v)
     : [];
 

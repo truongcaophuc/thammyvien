@@ -3,7 +3,7 @@
 // FE format badge/subtitle/receivedAt/history time sang tiếng Việt.
 import { gql } from "./graphql";
 import { API_BASE_URL } from "./config";
-import type { CallHistory, Lead, LeadStatus } from "../data";
+import type { CallHistory, ConsultantCall, Lead, LeadStatus } from "../data";
 
 type ServerStatus = "NEW" | "OVERDUE" | "CALLBACK" | "SCHEDULED" | "CLOSED";
 
@@ -96,6 +96,33 @@ export async function fetchMyLeads(): Promise<Lead[]> {
 export async function fetchLeadById(id: string): Promise<Lead | null> {
   const leads = await fetchMyLeads();
   return leads.find((l) => l.id === id) ?? null;
+}
+
+export async function fetchConsultantCalls(): Promise<ConsultantCall[]> {
+  const leads = await fetchMyLeads();
+  return leads
+    .flatMap((lead) =>
+      lead.history.map((h) => ({
+        id: h.id,
+        leadId: lead.id,
+        leadName: lead.name,
+        phone: lead.phone,
+        source: lead.source,
+        need: lead.need,
+        calledAt: h.calledAt ? formatCallDateTime(new Date(h.calledAt)) : h.time,
+        calledAtIso: h.calledAt || "",
+        result: h.result,
+        resultCode: "",
+        notes: h.note || "",
+        recordingUrl: h.recordingUrl,
+        recordingFileName: h.recordingFileName,
+      })),
+    )
+    .sort((a, b) => {
+      const at = a.calledAtIso ? new Date(a.calledAtIso).getTime() : 0;
+      const bt = b.calledAtIso ? new Date(b.calledAtIso).getTime() : 0;
+      return bt - at;
+    });
 }
 
 // Bật/tắt cờ "Quan tâm / đang cân nhắc" (warm lead) cho 1 lead.
@@ -234,6 +261,14 @@ export interface LeadProfile {
   address: string;
   job: string;
   attributes: LeadAttribute[];
+}
+
+export function formatLeadProfileValue(value: string): string {
+  const raw = String(value ?? "").trim();
+  const normalized = raw.toLowerCase();
+  if (["true", "1", "yes", "y"].includes(normalized)) return "Có";
+  if (["false", "0", "no", "n"].includes(normalized)) return "Không";
+  return raw;
 }
 
 const LEAD_PROFILE_QUERY = `

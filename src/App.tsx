@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, ClipboardList, LayoutGrid, CalendarDays } from "lucide-react";
+import { CheckCircle2, Loader2, Stethoscope, BookOpen, User as UserIcon, ClipboardList, LayoutGrid, CalendarDays, FileAudio } from "lucide-react";
 import {
   Navigate,
   Outlet,
@@ -23,6 +23,7 @@ import TechnicianAppointments from "./screens/technician/TechnicianAppointments"
 import CustomerCareList from "./screens/customerCare/CustomerCareList";
 import CustomerCareOverviewScreen from "./screens/customerCare/CustomerCareOverview";
 import CustomerCareBook from "./screens/customerCare/CustomerCareBook";
+import ConsultantCalls from "./screens/consultant/ConsultantCalls";
 import CallScriptSheet from "./modals/CallScriptSheet";
 import type { Lead } from "./data";
 import { checkSession, type AgentProfile, type WorkspaceRole } from "./lib/auth";
@@ -50,6 +51,11 @@ const CSKH_NAV: NavItem[] = [
   { to: "/customer-care", label: "Việc hôm nay", icon: ClipboardList },
   { to: "/customer-care/kb", label: "Tra cứu", icon: BookOpen },
   { to: "/customer-care/profile", label: "Cá nhân", icon: UserIcon },
+];
+
+const CONSULTANT_NAV: NavItem[] = [
+  { to: "/consultant", label: "Cuộc gọi", icon: FileAudio },
+  { to: "/consultant/profile", label: "Cá nhân", icon: UserIcon },
 ];
 
 export default function App() {
@@ -100,8 +106,15 @@ export default function App() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const role: WorkspaceRole = profile?.Role === "customer_care" ? "customer_care" : profile?.Role === "technician" ? "technician" : "telesale";
-  const homePath = role === "technician" ? "/technician/overview" : role === "customer_care" ? "/customer-care" : "/overview";
+  const role: WorkspaceRole = profile?.Role === "customer_care" ? "customer_care" : profile?.Role === "technician" ? "technician" : profile?.Role === "consultant" ? "consultant" : "telesale";
+  const homePath =
+    role === "technician"
+      ? "/technician/overview"
+      : role === "customer_care"
+        ? "/customer-care"
+        : role === "consultant"
+          ? "/consultant"
+          : "/overview";
 
   if (authState === "checking") {
     return (
@@ -221,6 +234,24 @@ export default function App() {
             </RequireAuth>
           }
         />
+
+        {/* ===== Workspace Tư vấn viên ===== */}
+        <Route
+          path="/consultant"
+          element={
+            <RequireAuth authState={authState}>
+              <RequireRole role={role} allow="consultant" homePath={homePath}>
+                <AppLayout navItems={CONSULTANT_NAV} />
+              </RequireRole>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<ConsultantCalls />} />
+          <Route
+            path="profile"
+            element={<Profile onLoggedOut={() => { setProfile(null); setAuthState("guest"); }} />}
+          />
+        </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
