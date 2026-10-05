@@ -14,7 +14,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 //
 // Khi build production: FE deploy cùng origin với CEP (cùng nginx) → proxy không cần,
 // path tương đối `/api/*`, `/graphql` vẫn work nguyên.
-const CEP_BACKEND = process.env.VITE_CEP_BACKEND ?? 'https://localhost:7053'
+const CEP_BACKEND = process.env.VITE_CEP_BACKEND ?? 'http://localhost:5077'
 
 function stripSecureCookie(setCookie: string | string[] | undefined): string[] | undefined {
   if (!setCookie) return undefined
